@@ -1,0 +1,15 @@
+# TMScript
+
+- MTKB数据库：common
+- 范围：共通
+- 技术领域：HMI
+- 机床类型：未标注
+- 品牌：未标注
+- 型号：未标注
+- 验证状态：原始资料/待工程验证
+- 来源：机床智能体知识库v1/01_通用技术与控制平台/05_FP_HMI/FANUC_PICTURE/05_通用工程实例/AUTO FIND CENTER20200302(1)/AUTO FIND CENTER20200302/FPScript/TMScript.lst
+- 文档编号：DOC-aea79be798cc76274cdf
+
+## 正文
+
+0
