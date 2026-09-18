@@ -1,0 +1,10 @@
+{
+  "contract": "SAMA-EPLAN-P8-BRIDGE",
+  "version": 1,
+  "preferredEplanVersion": "2.7",
+  "supportedEplanVersions": ["2.7", "2.8", "2.9"],
+  "inputSchema": "ElectricalProject-v2",
+  "requiredArguments": ["--eplan", "--input", "--output", "--new-project-only"],
+  "requiredOutputs": ["*.zw1", "*.pdf", "project-check.json"],
+  "forbiddenOperations": ["modify-existing-project", "write-edb-directly", "overwrite-source-project"]
+}
