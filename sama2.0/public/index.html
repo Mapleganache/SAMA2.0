@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>SAMA 2.0</title>
+  <style>
+    body { font-family: "Segoe UI", sans-serif; margin: 32px auto; max-width: 960px; color: #1c1c1c; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 18px; margin: 0 0 8px; }
+    p { color: #555; }
+    label { display: block; margin: 12px 0 4px; font-size: 13px; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; }
+    input[type="checkbox"] { width: auto; margin-right: 6px; }
+    textarea { min-height: 96px; }
+    .row { display: grid; grid-template-columns: 1fr 160px 180px; gap: 12px; }
+    .checks { display: flex; gap: 20px; align-items: center; margin-top: 8px; }
+    .checks label { margin: 0; }
+    button { margin-top: 16px; padding: 8px 16px; font: inherit; }
+    pre { white-space: pre-wrap; background: #f6f6f6; padding: 16px; }
+    .panel { margin-top: 20px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e8e8e8; font-size: 13px; }
+    .badge.complex { background: #fde7c7; }
+    .badge.simple { background: #d9f2d9; }
+    .card { border: 1px solid #ddd; padding: 12px 14px; margin: 12px 0; }
+    .card.winner { border-color: #2e7d32; }
+    .meta { color: #555; font-size: 13px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #e4e4e4; padding: 4px 6px; text-align: left; font-size: 13px; }
+    a { color: #0b57d0; }
+    ol.flow { padding-left: 18px; }
+    ol.flow li { margin: 10px 0; }
+    .think { margin: 8px 0 12px; padding-left: 10px; border-left: 3px solid #ddd; }
+    .think h3 { font-size: 14px; margin: 0 0 4px; }
+    .think pre { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>SAMA 2.0 磨床维修</h1>
+  <p>简单问题会直接回答。复杂故障会并行生成 5 套方案，再选出加权最高的一套。 <a href="/report">架构报告</a></p>
+  <label>API Key</label>
+  <input id="apiKey" type="password" placeholder="只保存在这台浏览器里" />
+  <div class="row">
+    <div>
+      <label>接口地址</label>
+      <input id="baseUrl" value="https://api.deepseek.com" />
+    </div>
+    <div>
+      <label>模型</label>
+      <input id="model" value="deepseek-chat" />
+    </div>
+    <div>
+      <label>每路最多轮次</label>
+      <input id="maxStep" type="number" min="1" max="50" value="8" />
+    </div>
+  </div>
+  <div class="checks">
+    <label><input id="force" type="checkbox" /> 强制走五路方案</label>
+    <label><input id="author" type="checkbox" /> 作者开关（流程、思考、准确性）</label>
+  </div>
+  <label>故障描述</label>
+  <textarea id="question" placeholder="例如：外圆磨床主轴发热、震动大"></textarea>
+  <button id="send" type="button">开始诊断</button>
+  <pre id="out">结果会显示在这里。</pre>
+  <section id="authorPanel" class="panel" hidden></section>
+  <script>
+    const fields = ['apiKey', 'baseUrl', 'model', 'maxStep']
+    for (const id of fields) {
+      const saved = localStorage.getItem('sama2-' + id)
+      if (saved) document.getElementById(id).value = saved
+    }
+    const authorBox = document.getElementById('author')
+    authorBox.checked = localStorage.getItem('sama2-author') === '1'
+    authorBox.onchange = () => {
+      localStorage.setItem('sama2-author', authorBox.checked ? '1' : '0')
+      renderAuthor(window.__samaLast)
+    }
+    let lastData = null
+    window.__samaLast = null
+
+    document.getElementById('send').onclick = async () => {
+      const out = document.getElementById('out')
+      const button = document.getElementById('send')
+      const payload = {
+        apiKey: document.getElementById('apiKey').value,
+        baseUrl: document.getElementById('baseUrl').value,
+        model: document.getElementById('model').value,
+        maxStep: Number(document.getElementById('maxStep').value) || 8,
+        forceMultiAgent: document.getElementById('force').checked,
+        userText: document.getElementById('question').value,
+      }
+      for (const id of fields) localStorage.setItem('sama2-' + id, document.getElementById(id).value)
+      button.disabled = true
+      out.textContent = '正在诊断…复杂故障会并行请求多次，请稍等。'
+      document.getElementById('authorPanel').hidden = true
+      try {
+        const response = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await response.json()
+        lastData = data
+        window.__samaLast = data
+        out.textContent = data.ok ? data.answer : (data.error || '诊断失败')
+        renderAuthor(data)
+      } catch (error) {
+        out.textContent = error.message || String(error)
+      } finally {
+        button.disabled = false
+      }
+    }
+
+    function renderAuthor(data) {
+      const panel = document.getElementById('authorPanel')
+      if (!authorBox.checked || !data || !data.ok) {
+        panel.hidden = true
+        panel.innerHTML = ''
+        return
+      }
+      const complexity = data.complexity || {}
+      const complex = complexity.level === 'complex' || data.route === 'complex'
+      const facts = data.facts || {}
+      const scores = new Map((data.judge?.ranked || []).map((row) => [row.id, row]))
+      const accuracyRows = new Map((data.accuracy?.ranked || []).map((row) => [row.id, row]))
+      const accuracy = data.accuracy
+      const accuracyBlock = renderAccuracy(accuracy, complex)
+      const paths = complex
+        ? (data.plans || []).map((plan) => renderPlan(plan, scores.get(plan.id), accuracyRows.get(plan.id), data.judge?.winnerId, accuracy?.bestId)).join('')
+        : '<p>这是简单问题，没有启动五路方案，也不做准确性专评。</p>'
+      panel.hidden = false
+      panel.innerHTML = `
+        <h2>作者视图</h2>
+        <p><span class="badge ${complex ? 'complex' : 'simple'}">${complex ? '复杂问题' : '简单问题'}</span></p>
+        <p>判断来源：${esc(sourceLabel(complexity.source))}</p>
+        <p>判断理由：${esc(complexity.reason || '无')}</p>
+        <p>现象：${esc((facts.phenomena || []).join('、') || '未提取')}</p>
+        <p>设备：${esc(facts.machine || '未识别')}</p>
+        <p>约束：${esc((facts.constraints || []).join('；') || '无')}</p>
+        ${renderFlow(data.flow)}
+        ${renderThoughts(data.plans)}
+        ${accuracyBlock}
+        <h2>五路结果</h2>
+        ${paths}
+      `
+    }
+
+    function renderPlan(plan, score, accuracy, winnerId, accuracyId) {
+      const dims = [
+        ['accuracy', '准确性'],
+        ['safety', '安全'],
+        ['feasibility', '可行'],
+        ['completeness', '完整'],
+        ['brevity', '简洁'],
+      ]
+      const trace = (plan.trace || []).map((step) => `第${step.step}步 ${step.tool || (step.final ? '给出方案' : '收束')}`).join(' → ')
+      const scoreLine = score
+        ? `<table><tr>${dims.map((dim) => `<th>${dim[1]}</th>`).join('')}<th>加权</th></tr><tr>${dims.map((dim) => `<td>${esc(score.scores?.[dim[0]])}</td>`).join('')}<td>${esc(score.total)}</td></tr></table><p class="meta">${esc(score.defect || '')}</p>`
+        : '<p class="meta">这一路没有进入加权评分。</p>'
+      const accuracyLine = accuracy
+        ? `<p class="meta">准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。${esc(accuracy.reason || '')}</p>`
+        : ''
+      return `<article class="card ${plan.id === winnerId ? 'winner' : ''}">
+        <h2>${esc(plan.title)} ${plan.id === winnerId ? '· 加权中选' : ''} ${plan.id === accuracyId ? '· 准确性最高' : ''}</h2>
+        <p class="meta">${esc(plan.id)} · ${esc(plan.status)} · ${esc(plan.stepCount)} 轮${trace ? ' · ' + esc(trace) : ''}</p>
+        ${scoreLine}
+        ${accuracyLine}
+        <pre>${esc(plan.plan || plan.error || '')}</pre>
+      </article>`
+    }
+
+    function renderFlow(flow) {
+      const items = (flow || []).map((step, index) => `<li>
+        <strong>${index + 1}. ${esc(step.stage)} · ${esc(step.title)}</strong>
+        <div>${esc(step.detail || '')}</div>
+        ${step.next ? `<div class="meta">走向：${esc(step.next)}</div>` : ''}
+        ${(step.steps || []).map((item) => `<div class="think"><h3>${esc(item.tool)}</h3><pre>${esc(item.observation || '')}</pre></div>`).join('')}
+      </li>`).join('')
+      return `<h2>流程走向</h2><ol class="flow">${items || '<li>没有流程记录。请重新诊断一次。</li>'}</ol>`
+    }
+
+    function renderThoughts(plans) {
+      if (!plans?.length) {
+        return '<h2>思考过程</h2><p>简单问题没有多轮思考。Main 先检索，再一次写完答复。检索内容写在上面的流程里。</p>'
+      }
+      const blocks = plans.map((plan) => {
+        const steps = (plan.trace || []).map((step) => `<div class="think">
+          <h3>第${esc(step.step)}步${step.tool ? ' · 调用 ' + esc(step.tool) : ' · 收束'}</h3>
+          <p><strong>思考：</strong>${esc(step.thought || '模型没有单独写下思考。')}</p>
+          ${step.args && Object.keys(step.args).length ? `<p class="meta">参数：${esc(JSON.stringify(step.args))}</p>` : ''}
+          ${step.observation ? `<p><strong>观察：</strong></p><pre>${esc(step.observation)}</pre>` : ''}
+        </div>`).join('')
+        return `<h3>${esc(plan.title)}</h3>${steps || '<p>这一路没有留下思考记录。</p>'}`
+      }).join('')
+      return `<h2>思考过程</h2>${blocks}`
+    }
+
+    function renderAccuracy(accuracy, complex) {
+      if (!complex) return '<h2>准确性</h2><p>简单问题不进入准确性专评。</p>'
+      const rows = accuracy?.ranked || []
+      if (!rows.length) return `<h2>准确性</h2><p>${esc(accuracy?.note || '这次没有得到准确性分数。')}</p>`
+      const body = rows.map((row) => `<tr>
+        <td>${esc(row.title)}${row.id === accuracy.bestId ? ' · 最高' : ''}</td>
+        <td>${esc(row.accuracy)}/10</td>
+        <td>${esc(row.credibility)}/10</td>
+        <td>${esc(row.reason || '')}</td>
+      </tr>`).join('')
+      return `<h2>准确性</h2>
+        <p>准确性最高：${esc(accuracy.title || '无')}，准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
+        <p>${esc(accuracy.reason || '')}</p>
+        <table>
+          <tr><th>方案</th><th>准确性</th><th>可信度</th><th>理由</th></tr>
+          ${body}
+        </table>`
+    }
+
+    function sourceLabel(source) {
+      if (source === 'hard') return '硬规则'
+      if (source === 'llm') return '分类模型'
+      if (source === 'force') return '强制五路'
+      if (source === 'fallback') return '分类失败，按复杂问题处理'
+      return source || '未知'
+    }
+
+    function esc(value) {
+      return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+  </script>
+</body>
+</html>
