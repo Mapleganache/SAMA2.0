@@ -34,6 +34,8 @@ const server = http.createServer(async (request, response) => {
         userText: body.userText,
         forceMultiAgent: Boolean(body.forceMultiAgent),
         maxStep: body.maxStep,
+        session: body.session,
+        allowWeb: Boolean(body.allowWeb),
       })
       sendJson(response, 200, {
         ok: true,
@@ -47,6 +49,11 @@ const server = http.createServer(async (request, response) => {
         flow: result.flow,
         rubric: result.rubric,
         meta: result.meta,
+        missing: result.missing,
+        questions: result.questions,
+        deferred: result.deferred,
+        rejected: result.rejected,
+        session: result.session,
       })
     } catch (error) {
       sendJson(response, 200, { ok: false, error: error?.message || String(error), code: error?.code || '' })

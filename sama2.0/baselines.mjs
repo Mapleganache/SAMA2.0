@@ -75,6 +75,5 @@ export function lookupBaseline(query) {
   for (const [word, key] of ALIASES) {
     if (text.includes(word) && !keys.includes(key)) keys.push(key)
   }
-  if (!keys.length) keys.push('主轴')
-  return keys.slice(0, 3).map((key) => ({ subsystem: key, ...BASELINES[key] }))
+  return keys.slice(0, 3).map((key) => ({ id: `baseline/${key}`, subsystem: key, ...BASELINES[key] }))
 }

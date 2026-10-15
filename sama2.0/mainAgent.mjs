@@ -67,6 +67,7 @@ export async function answerSimple({ query, history, llmTimeoutMs }) {
   })
   return {
     text: response.content.trim(),
+    evidence: `${manual || ''}\n${baseline || ''}`,
     steps: [
       { tool: 'search_knowledge', observation: clipText(manual, 800) },
       { tool: 'lookup_baseline', observation: clipText(baseline, 800) },
