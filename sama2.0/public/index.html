@@ -236,21 +236,10 @@
     function renderAccuracy(accuracy, complex, needInfo) {
       if (needInfo && !accuracy) return '<h2>准确性</h2><p>还在等补充，没有进入评分。</p>'
       if (!complex) return '<h2>准确性</h2><p>简单问题不进入准确性专评。</p>'
-      const rows = accuracy?.ranked || []
-      if (!rows.length) return `<h2>准确性</h2><p>${esc(accuracy?.note || '这次没有得到准确性分数。')}</p>`
-      const body = rows.map((row) => `<tr>
-        <td>${esc(row.title)}${row.id === accuracy.bestId ? ' · 最高' : ''}</td>
-        <td>${esc(row.accuracy)}/10</td>
-        <td>${esc(row.credibility)}/10</td>
-        <td>${esc(row.reason || '')}</td>
-      </tr>`).join('')
+      if (accuracy?.accuracy == null) return `<h2>准确性</h2><p>${esc(accuracy?.note || '审计未完成。选定方案不变。')}</p>`
       return `<h2>准确性</h2>
-        <p>准确性最高：${esc(accuracy.title || '无')}，准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
-        <p>${esc(accuracy.reason || '')}</p>
-        <table>
-          <tr><th>方案</th><th>准确性</th><th>可信度</th><th>理由</th></tr>
-          ${body}
-        </table>`
+        <p>只审计中选方案 ${esc(accuracy.title || '')}：准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
+        <p>${esc(accuracy.reason || '')}</p>`
     }
 
     function sourceLabel(source) {

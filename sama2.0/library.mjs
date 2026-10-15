@@ -30,17 +30,25 @@ function formatHit(doc, index) {
   return `[${index + 1}] ${doc.title}\nid：knowledge/${doc.file}#0-${end}\n${excerpt}`
 }
 
+let docCache = { key: '', docs: [] }
+
 function readDocs() {
   const dir = path.join(sama2Root(), 'knowledge')
   if (!fs.existsSync(dir)) return []
-  return fs.readdirSync(dir)
-    .filter((name) => name.endsWith('.md'))
-    .map((file) => {
-      const text = fs.readFileSync(path.join(dir, file), 'utf8')
-      const title = (text.match(/^#\s+(.+)$/m) || [])[1] || file
-      const subsystem = (text.match(/^子系统：(.+)$/m) || [])[1]?.trim() || ''
-      return { file, title, subsystem, text }
-    })
+  const names = fs.readdirSync(dir).filter((name) => name.endsWith('.md')).sort()
+  const key = names.map((name) => {
+    const stat = fs.statSync(path.join(dir, name))
+    return `${name}:${stat.mtimeMs}:${stat.size}`
+  }).join('|')
+  if (key === docCache.key) return docCache.docs
+  const docs = names.map((file) => {
+    const text = fs.readFileSync(path.join(dir, file), 'utf8')
+    const title = (text.match(/^#\s+(.+)$/m) || [])[1] || file
+    const subsystem = (text.match(/^子系统：(.+)$/m) || [])[1]?.trim() || ''
+    return { file, title, subsystem, text }
+  })
+  docCache = { key, docs }
+  return docs
 }
 
 function termsOf(query) {
