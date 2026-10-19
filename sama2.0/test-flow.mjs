@@ -179,8 +179,8 @@ calls.length = 0
 control.askLane = '第3路独立求解'
 const mixed = await runSama2({ userText: ready, maxStep: 4 })
 control.askLane = ''
-check('有一路提问时仍交付已写好的方案', mixed.route === 'complex' && mixed.answer.includes('第2路的完整维修方案') && mixed.answer.includes('砂轮主轴还是头架'))
-check('提问的那一路不参与中选', mixed.plans.some((plan) => plan.status === 'need_info') && mixed.judge?.winnerId === 'sub1')
+check('有一路提问时不交付已写好的步骤', mixed.route === 'need_info' && mixed.judge == null && mixed.answer.includes('砂轮主轴还是头架') && mixed.answer.includes('还不能给出排查步骤') && !mixed.answer.includes('第2路的完整维修方案'))
+check('提问留在各路记录里', mixed.plans.some((plan) => plan.status === 'need_info') && mixed.plans.some((plan) => String(plan.plan || '').includes('完整维修方案')))
 
 if (problems.length) {
   console.error(`\n${problems.length} failed: ${problems.join('、')}`)

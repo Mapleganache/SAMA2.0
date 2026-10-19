@@ -3,22 +3,33 @@ export async function searchMtkb({ query, facts = {}, baseUrl, timeoutMs = 5000,
   const brand = facts.machine || null
   const model = /\d/.test(String(facts.machine || '')) ? facts.machine : null
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let timer
+  const timed = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      const error = new Error('MTKB 超时')
+      error.name = 'AbortError'
+      reject(error)
+    }, timeoutMs)
+  })
   try {
-    const response = await fetchImpl(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: String(query || ''),
-        domain: '机械',
-        machine_type: '磨床',
-        brand,
-        model,
-        page: 1,
-        page_size: 4,
+    const response = await Promise.race([
+      fetchImpl(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: String(query || ''),
+          domain: '机械',
+          machine_type: '磨床',
+          brand,
+          model,
+          page: 1,
+          page_size: 4,
+        }),
+        signal: controller.signal,
       }),
-      signal: controller.signal,
-    })
+      timed,
+    ])
     if (!response.ok) return 'MTKB 未连接'
     const data = await response.json()
     const rows = data?.results || data?.chunks || data?.data || data?.items || []
@@ -29,7 +40,9 @@ export async function searchMtkb({ query, facts = {}, baseUrl, timeoutMs = 5000,
       const excerpt = String(item.excerpt || item.content || item.text || '').slice(0, 700)
       return `id: ${id}\n${heading}\n${excerpt}`
     }).join('\n\n')
-  } catch {
+  } catch (error) {
+    const text = String(error?.message || error)
+    if (error?.name === 'AbortError' || /abort|timeout/i.test(text)) return 'MTKB 超时'
     return 'MTKB 未连接'
   } finally {
     clearTimeout(timer)

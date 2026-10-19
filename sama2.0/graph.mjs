@@ -138,8 +138,7 @@ async function sampleNode(state) {
   }
 
   const asked = collectQuestions(plans)
-  const finished = plans.filter((plan) => plan.status === 'done' && plan.plan && !isFailedPlan(plan))
-  if ((asked.questions.length || plans.some((plan) => plan.supervisor?.missing?.length)) && !finished.length) {
+  if (asked.questions.length || plans.some((plan) => plan.supervisor?.missing?.length)) {
     const questions = asked.questions.length ? asked.questions : questionsFor(query).questions
     return {
       plans,
@@ -163,13 +162,10 @@ async function sampleNode(state) {
 }
 
 async function verifyNode(state) {
-  const { query, plans, asked, facts, complexity, config, started } = state
+  const { query, plans, facts, complexity, config, started } = state
   const finished = plans.filter((plan) => plan.status === 'done' && plan.plan && !isFailedPlan(plan))
   const judged = await verifyPlans({ query, plans: finished.length ? finished : plans, reportPlans: plans, facts, config })
-  const extraAsk = asked?.questions?.length
-    ? `\n\n### 其他路还想确认\n下面这几句没有挡住已经写好的步骤：\n${asked.questions.map((item, index) => `${index + 1}. ${item.text}`).join('\n')}`
-    : ''
-  const answer = `（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，只交付综合分选出的一份：${complexity.reason}）\n\n${judged.answer}${extraAsk}`
+  const answer = `（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，只交付综合分选出的一份：${complexity.reason}）\n\n${judged.answer}`
   const result = pack({
     route: judged.winner ? 'complex' : 'no_plan',
     answer,

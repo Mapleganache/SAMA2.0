@@ -5,6 +5,7 @@ import { extractJson } from './json.mjs'
 import { checkGrounding, kappa } from './grounding.mjs'
 import { actionKey, createStepBudget, isDuplicate, samePrefix } from './guard.mjs'
 import { recordMeasurement } from './measurements.mjs'
+import { searchMtkb } from './mtkb.mjs'
 
 const problems = []
 function check(name, ok, detail = '') {
@@ -70,6 +71,18 @@ const first = extractJson(dumped)
 check('多段工具调用只取第一段', first?.tool === 'lookup_grind_dialect' && first?.args?.query === '高桥')
 const phrases = ['机床不对劲', '有故障，帮我看看', '磨床异常怎么办']
 check('换一种说法仍然四项都缺', phrases.every((text) => questionsFor(text).missing.length === 4))
+
+const timed = await searchMtkb({
+  query: '主轴',
+  timeoutMs: 30,
+  fetchImpl: () => new Promise(() => {}),
+})
+check('案例库超时写明超时', timed === 'MTKB 超时')
+const down = await searchMtkb({
+  query: '主轴',
+  fetchImpl: async () => { throw new Error('connect ECONNREFUSED') },
+})
+check('案例库连不上不写成超时', down === 'MTKB 未连接')
 
 if (problems.length) {
   console.error(`\n${problems.length} failed: ${problems.join('、')}`)
