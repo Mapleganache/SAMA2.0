@@ -1,9 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { clip } from './json.mjs'
 import { sama2Root } from './settings.mjs'
 
-export function searchLibrary(query, { subsystem = '', limit = 4 } = {}) {
+export function searchLibrary(query, { subsystem = '', domain = '', limit = 4 } = {}) {
+  const area = String(domain || '').trim()
+  if (area && area !== '机械') return '本地知识库没有该领域的文档。'
   const raw = String(query || '').trim()
   if (!raw) return '没有查询词。'
   const docs = readDocs()
@@ -20,20 +21,34 @@ export function searchLibrary(query, { subsystem = '', limit = 4 } = {}) {
     .slice(0, limit)
   if (!ranked.length) return `本地资料没有命中「${raw}」。不要把未查到的内容写成手册条款或具体数值。`
   const note = subsystem && !filtered.length ? `未按子系统「${subsystem}」筛到专文，下面是全文检索结果。\n\n` : ''
-  return note + ranked.map((doc, index) => `[${index + 1}] ${doc.title}\n出处：knowledge/${doc.file}\n${clip(doc.text, 700)}`).join('\n\n')
+  return note + ranked.map((doc, index) => formatHit(doc, index)).join('\n\n')
 }
+
+function formatHit(doc, index) {
+  const end = Math.min(doc.text.length, 700)
+  const excerpt = doc.text.slice(0, end)
+  return `[${index + 1}] ${doc.title}\nid：knowledge/${doc.file}#0-${end}\n${excerpt}`
+}
+
+let docCache = { key: '', docs: [] }
 
 function readDocs() {
   const dir = path.join(sama2Root(), 'knowledge')
   if (!fs.existsSync(dir)) return []
-  return fs.readdirSync(dir)
-    .filter((name) => name.endsWith('.md'))
-    .map((file) => {
-      const text = fs.readFileSync(path.join(dir, file), 'utf8')
-      const title = (text.match(/^#\s+(.+)$/m) || [])[1] || file
-      const subsystem = (text.match(/^子系统：(.+)$/m) || [])[1]?.trim() || ''
-      return { file, title, subsystem, text }
-    })
+  const names = fs.readdirSync(dir).filter((name) => name.endsWith('.md')).sort()
+  const key = names.map((name) => {
+    const stat = fs.statSync(path.join(dir, name))
+    return `${name}:${stat.mtimeMs}:${stat.size}`
+  }).join('|')
+  if (key === docCache.key) return docCache.docs
+  const docs = names.map((file) => {
+    const text = fs.readFileSync(path.join(dir, file), 'utf8')
+    const title = (text.match(/^#\s+(.+)$/m) || [])[1] || file
+    const subsystem = (text.match(/^子系统：(.+)$/m) || [])[1]?.trim() || ''
+    return { file, title, subsystem, text }
+  })
+  docCache = { key, docs }
+  return docs
 }
 
 function termsOf(query) {

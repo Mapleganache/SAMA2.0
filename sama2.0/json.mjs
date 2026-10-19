@@ -3,14 +3,37 @@ export function extractJson(text) {
   if (!raw) return null
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const body = fenced ? fenced[1] : raw
-  const start = body.indexOf('{')
-  const end = body.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
+  const slice = firstObject(body)
+  if (!slice) return null
   try {
-    return JSON.parse(body.slice(start, end + 1))
+    return JSON.parse(slice)
   } catch {
     return null
   }
+}
+
+function firstObject(text) {
+  const start = text.indexOf('{')
+  if (start < 0) return ''
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return ''
 }
 
 export function clip(text, max = 1200) {

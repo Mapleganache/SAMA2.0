@@ -33,7 +33,8 @@ export function pickWinner(plans, scoreRows) {
     .sort((a, b) => {
       if (b.total !== a.total) return b.total - a.total
       if (b.scores.safety !== a.scores.safety) return b.scores.safety - a.scores.safety
-      return b.scores.accuracy - a.scores.accuracy
+      if (b.scores.accuracy !== a.scores.accuracy) return b.scores.accuracy - a.scores.accuracy
+      return String(a.id).localeCompare(String(b.id), 'en')
     })
   return ranked
 }

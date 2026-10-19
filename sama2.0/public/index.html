@@ -32,11 +32,12 @@
     .think { margin: 8px 0 12px; padding-left: 10px; border-left: 3px solid #ddd; }
     .think h3 { font-size: 14px; margin: 0 0 4px; }
     .think pre { margin: 6px 0; }
+    #pending { margin-top: 16px; padding: 12px 14px; background: #fff7e8; border: 1px solid #f0d7a2; }
   </style>
 </head>
 <body>
   <h1>SAMA 2.0 磨床维修</h1>
-  <p>简单问题会直接回答。复杂故障会并行生成 5 套方案，再选出加权最高的一套。 <a href="/report">架构报告</a></p>
+  <p>缺型号或工况时先提问。信息齐了以后，简单问题直接回答；复杂故障采样多路，只交付综合分最高的一份。 <a href="/report">架构报告</a></p>
   <label>API Key</label>
   <input id="apiKey" type="password" placeholder="只保存在这台浏览器里" />
   <div class="row">
@@ -56,9 +57,11 @@
   <div class="checks">
     <label><input id="force" type="checkbox" /> 强制走五路方案</label>
     <label><input id="author" type="checkbox" /> 作者开关（流程、思考、准确性）</label>
+    <label><input id="web" type="checkbox" /> 允许网页搜索</label>
   </div>
-  <label>故障描述</label>
-  <textarea id="question" placeholder="例如：外圆磨床主轴发热、震动大"></textarea>
+  <div id="pending" hidden></div>
+  <label id="questionLabel">故障描述</label>
+  <textarea id="question" placeholder="例如：高桥外圆磨主轴发热并且振动，空载，刚开机"></textarea>
   <button id="send" type="button">开始诊断</button>
   <pre id="out">结果会显示在这里。</pre>
   <section id="authorPanel" class="panel" hidden></section>
@@ -74,6 +77,10 @@
       localStorage.setItem('sama2-author', authorBox.checked ? '1' : '0')
       renderAuthor(window.__samaLast)
     }
+    const webBox = document.getElementById('web')
+    webBox.checked = localStorage.getItem('sama2-web') === '1'
+    webBox.onchange = () => localStorage.setItem('sama2-web', webBox.checked ? '1' : '0')
+    let session = null
     let lastData = null
     window.__samaLast = null
 
@@ -86,7 +93,9 @@
         model: document.getElementById('model').value,
         maxStep: Number(document.getElementById('maxStep').value) || 8,
         forceMultiAgent: document.getElementById('force').checked,
+        allowWeb: webBox.checked,
         userText: document.getElementById('question').value,
+        session,
       }
       for (const id of fields) localStorage.setItem('sama2-' + id, document.getElementById(id).value)
       button.disabled = true
@@ -101,13 +110,36 @@
         const data = await response.json()
         lastData = data
         window.__samaLast = data
+        if (data.ok && data.route === 'need_info') session = data.session
+        else if (data.ok) session = null
         out.textContent = data.ok ? data.answer : (data.error || '诊断失败')
+        showPending(data)
         renderAuthor(data)
       } catch (error) {
         out.textContent = error.message || String(error)
       } finally {
         button.disabled = false
       }
+    }
+
+    function showPending(data) {
+      const box = document.getElementById('pending')
+      const label = document.getElementById('questionLabel')
+      const input = document.getElementById('question')
+      if (!data?.ok || data.route !== 'need_info') {
+        box.hidden = true
+        box.innerHTML = ''
+        label.textContent = '故障描述'
+        input.placeholder = '例如：高桥外圆磨主轴发热并且振动，空载，刚开机'
+        return
+      }
+      const lines = (data.questions || []).map((item) => `<li>${esc(item.text)}</li>`).join('')
+      box.hidden = false
+      box.innerHTML = `<strong>先补充这几项，补完再诊断。原问题会保留。</strong><ul>${lines}</ul>`
+      label.textContent = '补充回答'
+      input.placeholder = '只写补充，例如：刚开机的冷机，现象出现在空载'
+      input.value = ''
+      input.focus()
     }
 
     function renderAuthor(data) {
@@ -118,28 +150,32 @@
         return
       }
       const complexity = data.complexity || {}
-      const complex = complexity.level === 'complex' || data.route === 'complex'
+      const complex = complexity.level === 'complex' || complexity.level === 'boundary' || data.route === 'complex'
+      const needInfo = data.route === 'need_info'
+      const badge = needInfo ? '需要补充' : complex ? '复杂问题' : '简单问题'
       const facts = data.facts || {}
       const scores = new Map((data.judge?.ranked || []).map((row) => [row.id, row]))
       const accuracyRows = new Map((data.accuracy?.ranked || []).map((row) => [row.id, row]))
       const accuracy = data.accuracy
-      const accuracyBlock = renderAccuracy(accuracy, complex)
-      const paths = complex
-        ? (data.plans || []).map((plan) => renderPlan(plan, scores.get(plan.id), accuracyRows.get(plan.id), data.judge?.winnerId, accuracy?.bestId)).join('')
-        : '<p>这是简单问题，没有启动五路方案，也不做准确性专评。</p>'
+      const accuracyBlock = renderAccuracy(accuracy, complex, needInfo)
+      const paths = (data.plans || []).length
+        ? data.plans.map((plan) => renderPlan(plan, scores.get(plan.id), accuracyRows.get(plan.id), data.judge?.winnerId)).join('')
+        : needInfo
+          ? '<p>还没有开始写方案。补全上面的问题之后才会采样。</p>'
+          : '<p>这是简单问题，没有启动五路方案，也不做准确性专评。</p>'
       panel.hidden = false
       panel.innerHTML = `
         <h2>作者视图</h2>
-        <p><span class="badge ${complex ? 'complex' : 'simple'}">${complex ? '复杂问题' : '简单问题'}</span></p>
+        <p><span class="badge ${needInfo ? '' : complex ? 'complex' : 'simple'}">${badge}</span></p>
         <p>判断来源：${esc(sourceLabel(complexity.source))}</p>
         <p>判断理由：${esc(complexity.reason || '无')}</p>
         <p>现象：${esc((facts.phenomena || []).join('、') || '未提取')}</p>
         <p>设备：${esc(facts.machine || '未识别')}</p>
         <p>约束：${esc((facts.constraints || []).join('；') || '无')}</p>
         ${renderFlow(data.flow)}
-        ${renderThoughts(data.plans)}
+        ${renderThoughts(data.plans, needInfo)}
         ${accuracyBlock}
-        <h2>五路结果</h2>
+        <h2>${needInfo && !(data.plans || []).length ? '方案' : '各路结果'}</h2>
         ${paths}
       `
     }
@@ -160,8 +196,8 @@
         ? `<p class="meta">准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。${esc(accuracy.reason || '')}</p>`
         : ''
       return `<article class="card ${plan.id === winnerId ? 'winner' : ''}">
-        <h2>${esc(plan.title)} ${plan.id === winnerId ? '· 加权中选' : ''} ${plan.id === accuracyId ? '· 准确性最高' : ''}</h2>
-        <p class="meta">${esc(plan.id)} · ${esc(plan.status)} · ${esc(plan.stepCount)} 轮${trace ? ' · ' + esc(trace) : ''}</p>
+        <h2>${esc(plan.title)} ${plan.id === winnerId ? '· 中选' : ''}</h2>
+        <p class="meta">${esc(plan.id)} · ${esc(plan.status)} · ${esc(plan.stepCount)} 轮${plan.stopReason ? ' · ' + esc(plan.stopReason) : ''}${trace ? ' · ' + esc(trace) : ''}</p>
         ${scoreLine}
         ${accuracyLine}
         <pre>${esc(plan.plan || plan.error || '')}</pre>
@@ -178,9 +214,12 @@
       return `<h2>流程走向</h2><ol class="flow">${items || '<li>没有流程记录。请重新诊断一次。</li>'}</ol>`
     }
 
-    function renderThoughts(plans) {
+    function renderThoughts(plans, needInfo) {
       if (!plans?.length) {
-        return '<h2>思考过程</h2><p>简单问题没有多轮思考。Main 先检索，再一次写完答复。检索内容写在上面的流程里。</p>'
+        const text = needInfo
+          ? '这一轮停在补充问题，还没有模型思考，也没有调用工具。'
+          : '简单问题没有多轮思考。Main 先检索，再一次写完答复。检索内容写在上面的流程里。'
+        return `<h2>思考过程</h2><p>${text}</p>`
       }
       const blocks = plans.map((plan) => {
         const steps = (plan.trace || []).map((step) => `<div class="think">
@@ -194,23 +233,13 @@
       return `<h2>思考过程</h2>${blocks}`
     }
 
-    function renderAccuracy(accuracy, complex) {
+    function renderAccuracy(accuracy, complex, needInfo) {
+      if (needInfo && !accuracy) return '<h2>准确性</h2><p>还在等补充，没有进入评分。</p>'
       if (!complex) return '<h2>准确性</h2><p>简单问题不进入准确性专评。</p>'
-      const rows = accuracy?.ranked || []
-      if (!rows.length) return `<h2>准确性</h2><p>${esc(accuracy?.note || '这次没有得到准确性分数。')}</p>`
-      const body = rows.map((row) => `<tr>
-        <td>${esc(row.title)}${row.id === accuracy.bestId ? ' · 最高' : ''}</td>
-        <td>${esc(row.accuracy)}/10</td>
-        <td>${esc(row.credibility)}/10</td>
-        <td>${esc(row.reason || '')}</td>
-      </tr>`).join('')
+      if (accuracy?.accuracy == null) return `<h2>准确性</h2><p>${esc(accuracy?.note || '审计未完成。选定方案不变。')}</p>`
       return `<h2>准确性</h2>
-        <p>准确性最高：${esc(accuracy.title || '无')}，准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
-        <p>${esc(accuracy.reason || '')}</p>
-        <table>
-          <tr><th>方案</th><th>准确性</th><th>可信度</th><th>理由</th></tr>
-          ${body}
-        </table>`
+        <p>只审计中选方案 ${esc(accuracy.title || '')}：准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
+        <p>${esc(accuracy.reason || '')}</p>`
     }
 
     function sourceLabel(source) {

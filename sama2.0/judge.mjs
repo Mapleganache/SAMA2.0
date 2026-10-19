@@ -2,7 +2,26 @@ import { DIMENSIONS } from './config.mjs'
 import { clip, extractJson } from './json.mjs'
 import { callText } from './llm.mjs'
 import { logEvent } from './log.mjs'
-import { normalizeScores, pickWinner } from './score.mjs'
+import { clampScore, normalizeScores, pickWinner } from './score.mjs'
+
+export async function safetyOnly({ query, plan, timeoutMs }) {
+  try {
+    const response = await callText({
+      system: `你做磨床方案安全抽查。只给安全性打 0 到 10 分，不选冠军，不写维修步骤。
+安全性看能量隔离、砂轮防护、是否阻止带电或带压拆卸。
+只输出 JSON：{"safety":0}`,
+      user: `故障：\n${query}\n\n方案：\n${clip(plan?.plan || '', 4000)}`,
+      temperature: 0.1,
+      timeoutMs,
+      maxTokens: 200,
+    })
+    const parsed = extractJson(response.content)
+    return clampScore(parsed?.safety)
+  } catch (error) {
+    logEvent('safety_failed', { message: clip(error?.message || error, 300) })
+    return 0
+  }
+}
 
 export async function judgePlans({ query, rubric, plans, timeoutMs }) {
   const usable = plans.filter((plan) => plan.status === 'done' && !String(plan.plan || '').startsWith('方案生成失败'))
@@ -62,40 +81,53 @@ function judgeSystem() {
 function judgeUser(query, rubric, plans) {
   const notes = (rubric?.caseNotes || []).join('\n')
   const blocks = plans.map((plan) => {
-    return `方案 ${plan.id}（${plan.title}，状态 ${plan.status}）\n${clip(plan.plan, 5000)}`
+    const observations = (plan.notes || []).map((note) => {
+      const id = note.obsId || `${plan.id}-step${note.step}`
+      return `${id}\n工具：${note.tool}\n参数：${JSON.stringify(note.args || {})}\n观察：${note.observation}`
+    }).join('\n\n')
+    const stop = plan.stopReason ? `收束：${plan.stopReason}` : ''
+    const isolation = plan.supervisor?.isolation_noted ? '成稿写有隔离、断电或砂轮防护。' : '成稿未同时写明隔离、断电和砂轮防护。'
+    return `方案 ${plan.id}（${plan.title}，状态 ${plan.status}）\n${stop}\n${isolation}\n${observations}\n\n成稿：\n${plan.plan}`
   }).join('\n\n----\n\n')
-  return `原始故障：\n${query}\n\n本题评判注意事项：\n${notes || '无'}\n\n五套方案：\n${blocks}`
+  return `原始故障：\n${query}\n\n本题评判注意事项：\n${notes || '无'}\n\n幸存方案：\n${blocks}`
 }
 
-export function formatJudgement(plans, judgement) {
+export function formatJudgement(plans, judgement, rejected = []) {
   if (!judgement?.winner) {
-    const reasons = plans.map((plan) => `- ${plan.title}：${clip(plan.plan, 240)}`).join('\n')
-    return `五路方案都没有形成可执行结果。\n\n${reasons}`
+    const lines = rejected.map((item) => `- ${item.title}：${item.unsupported.join('、') || '没有可核对的成稿'}`)
+    const failed = plans
+      .filter((plan) => String(plan.plan || '').startsWith('方案生成失败'))
+      .map((plan) => `- ${plan.title}：方案生成失败`)
+    return `本次没有可交付方案。\n\n${[...lines, ...failed].join('\n') || '没有幸存方案。'}`
   }
   const winnerPlan = plans.find((plan) => plan.id === judgement.winner.id)
   const header = DIMENSIONS.map((dim) => dim.label).join(' | ')
   const lines = judgement.ranked.map((row) => {
     const cells = DIMENSIONS.map((dim) => row.scores[dim.key]).join(' | ')
-    return `| ${row.title} | ${cells} | ${row.total} |`
+    const mark = row.id === judgement.winner.id ? '中选' : ''
+    return `| ${row.title}${mark ? '（中选）' : ''} | ${cells} | ${row.total} |`
   })
-  const defects = judgement.ranked
-    .filter((row) => row.id !== judgement.winner.id)
-    .map((row) => `- ${row.title}：${row.defect || '未单独指出缺陷'}`)
+  const dropped = rejected.map((item) => `- ${item.title}（${item.id}）：${labelUnsupported(item.unsupported)}`)
   const failed = plans
     .filter((plan) => String(plan.plan || '').startsWith('方案生成失败'))
-    .map((plan) => `- ${plan.title}：方案生成失败`)
+    .map((plan) => `- ${plan.title}（${plan.id}）：方案生成失败`)
   return `${winnerPlan?.plan || ''}
 
 ---
 
 ### 评分汇总
-加权最高：${judgement.winner.title}（${judgement.winner.total} / 10）
+中选：${judgement.winner.title}（${judgement.winner.total} / 10）
 
 | 方案 | ${header} | 加权 |
 | --- | ${DIMENSIONS.map(() => '---').join(' | ')} | --- |
 ${lines.join('\n')}
 
-### 其他方案的主要不足
-${[...defects, ...failed].join('\n') || '无'}
+### 未进入候选
+${[...dropped, ...failed].join('\n') || '无'}
 ${judgement.note ? `\n${judgement.note}` : ''}`
+}
+
+function labelUnsupported(items) {
+  if (!items?.length) return '未通过出处核对'
+  return items.map((item) => `含无出处 ${item}`).join('；')
 }
