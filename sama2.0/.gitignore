@@ -1,3 +1,9 @@
 settings.json
 logs/
 node_modules/
+
+# 由随Git的压缩分片还原，避免重复提交展开的主库
+data/
+
+# 项目本地npm缓存，避免依赖各电脑的全局缓存权限
+.npm-cache/

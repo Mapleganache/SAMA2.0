@@ -8,5 +8,16 @@
     "@langchain/openai": "^1.6.2",
     "langchain": "^1.5.16",
     "zod": "^4.6.7"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "postinstall": "node scripts/prepare-db.mjs",
+    "setup:db": "node scripts/prepare-db.mjs",
+    "test:db": "node --test tests/database.test.mjs tests/database-flow.test.mjs",
+    "test:core": "node test-rules.mjs && node test-gates.mjs && node test-guard-run.mjs && node test-flow.mjs",
+    "test": "npm run test:db && npm run test:core",
+    "start": "node server.mjs"
   }
 }

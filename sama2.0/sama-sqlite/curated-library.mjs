@@ -42,7 +42,7 @@ function queryTerms(query,vocabulary){
  for(const {term} of vocabulary)if(q.includes(term))terms.set(term,term==='代用'?12:term.length>=3?5:3)
  return [...terms].slice(0,512)
 }
-const JOIN=`SELECT u.*,p.summary,p.structure_requirement,p.search_length,e.locator,e.line_start,e.line_end,e.source_id,s.title AS source_title,s.version AS source_version,s.version_status,s.relative_path,s.pdf_path FROM units u JOIN retrieval_profiles p ON p.unit_id=u.id JOIN evidence e ON e.id=u.evidence_id JOIN sources s ON s.id=e.source_id`
+const JOIN=`SELECT u.rowid AS citation_row,u.*,p.summary,p.structure_requirement,p.search_length,e.locator,e.line_start,e.line_end,e.source_id,s.title AS source_title,s.version AS source_version,s.version_status,s.relative_path,s.pdf_path FROM units u JOIN retrieval_profiles p ON p.unit_id=u.id JOIN evidence e ON e.id=u.evidence_id JOIN sources s ON s.id=e.source_id`
 export function searchRecords(query,options={}){
  const raw=String(query||'').trim();if(!raw)return {mode:'none',records:[],reason:'没有查询词。'}
  if(raw.length>8000)return {mode:'none',records:[],reason:'查询过长，请限定为一个故障或资料问题。'}
@@ -83,7 +83,7 @@ function hydrate(db,u,rank){
  return {...u,...rank,evidence,paths,parameters}
 }
 function renderRecord(u,index){
- const parts=[`[${index}] ${u.id} ${u.title}`,`子系统：${u.subsystem}；类型：${u.kind==='case'?'历史案例':'通用原理'}；专业审核：${u.expert_status}。`,
+ const parts=[`[${index}] ${u.id} ${u.title}`,`id: sqlite_curated:${u.citation_row}`,`子系统：${u.subsystem}；类型：${u.kind==='case'?'历史案例':'通用原理'}；专业审核：${u.expert_status}。`,
  `适用：${u.structure_requirement}；机床型号：${u.machine_model||'未知'}${u.controller_model?`；控制器：${u.controller_model}`:''}。`,
  `内容：${u.summary}`]
  if(u.kind==='case'){
