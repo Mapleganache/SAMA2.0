@@ -1,3 +1,4 @@
+import { searchLibrary as searchSqliteLibrary } from './sama-sqlite/library.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { sama2Root } from './settings.mjs'
@@ -5,6 +6,19 @@ import { sama2Root } from './settings.mjs'
 export function searchLibrary(query, { subsystem = '', domain = '', limit = 4 } = {}) {
   const area = String(domain || '').trim()
   if (area && area !== '机械') return '本地知识库没有该领域的文档。'
+  const databaseConfigPath = path.join(sama2Root(), 'sama-database.json')
+  if (fs.existsSync(databaseConfigPath)) {
+    try {
+      const databaseConfig = JSON.parse(fs.readFileSync(databaseConfigPath, 'utf8'))
+      if (databaseConfig.enabled) return searchSqliteLibrary(query, {
+        subsystem, limit,
+        dbPath: process.env.SAMA2_SQLITE_PATH || databaseConfig.dbPath,
+        mode: process.env.SAMA2_SQLITE_MODE || databaseConfig.mode || 'production',
+      })
+    } catch (error) {
+      return `SQLite配置读取失败：${error.message}。未改用旧Markdown，不得声称已查到。`
+    }
+  }
   const raw = String(query || '').trim()
   if (!raw) return '没有查询词。'
   const docs = readDocs()

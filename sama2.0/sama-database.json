@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "dbPath": "/Users/luheng/Desktop/机床智能体/SAMA数据库全量整理_20261026/data/sama_full.sqlite",
+  "mode": "reference",
+  "note": "全量原文开发参考；非专业审核发布。production模式目前无获准资料。"
+}
