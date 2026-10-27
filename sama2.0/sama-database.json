@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "dbPath": "data/sama_full.sqlite",
+  "mode": "reference",
+  "note": "随Git的压缩分片由npm ci自动还原；reference仅作原文参考，专业审核仍待完成。"
+}

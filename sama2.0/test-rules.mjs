@@ -1,3 +1,4 @@
+import { databaseOptions } from './sama-sqlite/connection.mjs'
 import { classifyByRules } from './complexity.mjs'
 import { identifyMachine } from './dialect.mjs'
 import { extractFaultFacts } from './facts.mjs'
@@ -79,11 +80,15 @@ if (machine.id !== 'gaoqiao') {
 }
 
 const hit = searchLibrary('静压轴承油膜')
-if (!hit.includes('hydrostatic.md')) {
+const sqliteEnabled = Boolean(databaseOptions())
+const libraryOk = sqliteEnabled
+  ? hit.includes('SQLite全量资料') && /sqlite_curated:\d+/.test(hit) && hit.includes('出处：')
+  : hit.includes('hydrostatic.md')
+if (!libraryOk) {
   failed += 1
   console.log('FAIL library', hit.slice(0, 200))
 } else {
-  console.log('OK library hydrostatic')
+  console.log(sqliteEnabled ? 'OK library SQLite evidence and source' : 'OK library hydrostatic')
 }
 
 if (failed) {

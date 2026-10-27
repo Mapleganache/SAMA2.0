@@ -1,3 +1,4 @@
+import { databaseOptions } from './sama-sqlite/connection.mjs'
 import { tool } from 'langchain'
 import { z } from 'zod'
 import { lookupBaseline } from './baselines.mjs'
@@ -19,7 +20,7 @@ export function buildDiagnosticTools({ query = '', facts = {}, allowWeb = false,
       }),
       {
         name: 'search_knowledge',
-        description: '检索本地磨床维修笔记。domain 为空视为机械；不是机械时本地库直接说明没有该领域。返回带 knowledge/文件#起-止。',
+        description: '检索本地磨床维修笔记。domain 为空视为机械；不是机械时本地库直接说明没有该领域。SQLite启用时返回sqlite_curated/fragment/case:编号及原文定位，否则返回knowledge/文件#起-止。',
         schema: z.object({ query: text, subsystem: text, domain: text }).passthrough(),
       },
     ),
@@ -73,12 +74,19 @@ export function buildDiagnosticTools({ query = '', facts = {}, allowWeb = false,
     tool(
       async (args) => {
         const ignored = args.brand || args.domain || args.model ? '品牌与领域由程序填写。\n' : ''
+        const database = databaseOptions()
+        if (database) {
+          const { searchLibrary: searchSqlite } = await import('./sama-sqlite/library.mjs')
+          const machine = String(facts.machine || '未知').slice(0, 60)
+          const scope = `本机SQLite；程序识别设备：${machine}。结果中的未知型号不代表与该设备匹配，仅作原文参考。\n`
+          return ignored + scope + searchSqlite(args.query || '', { ...database, budget: 3200 })
+        }
         const found = await searchMtkb({ query: args.query || '', facts, baseUrl: mtkbUrl })
         return ignored + found
       },
       {
         name: 'search_mtkb',
-        description: '查询本机案例库。品牌、型号和领域由程序填写。',
+        description: '查询本机案例与原理。SQLite启用时无需8765服务；品牌和型号由程序填写，未知型号不得当成本机匹配。' ,
         schema: z.object({ query: text }).passthrough(),
       },
     ),
