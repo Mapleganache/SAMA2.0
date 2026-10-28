@@ -1,6 +1,8 @@
 const SPEC_RE = /(\d+(?:\.\d+)?)\s*(MPa|kPa|bar|Pa|μm|µm|um|mm|N\s*[·.*]\s*m|Nm)/gi
 const KNOWLEDGE_ID = /knowledge\/[A-Za-z0-9._-]+#\d+-\d+/g
-const CHUNK_ID = /[A-Za-z][A-Za-z0-9_-]*:\d+/g
+// 只认本系统产出的引用前缀；不要把 ISO:9001、图:3 这类标准号/编号当作出处 ID。
+const CHUNK_ID = /\b(?:sqlite_(?:curated|fragment|case)|database|common|equipment|circuit):\d+\b/gi
+const FRAGMENT_CONTENT_ID = /\bFR-[a-f0-9]{24}\b/gi
 const URL_RE = /https?:\/\/[^\s)\]>"']+/g
 
 export function kappa(text) {
@@ -41,8 +43,9 @@ export function checkGrounding(planText, evidence) {
   }
   const missingIds = missingCitations(plan, evidenceRaw, KNOWLEDGE_ID)
   const missingChunks = missingCitations(plan, evidenceRaw, CHUNK_ID)
+  const missingFr = missingCitations(plan, evidenceRaw, FRAGMENT_CONTENT_ID)
   const missingUrls = [...new Set(plan.match(URL_RE) || [])].filter((url) => !evidenceRaw.includes(url))
-  unsupported.push(...missingIds, ...missingChunks, ...missingUrls)
+  unsupported.push(...missingIds, ...missingChunks, ...missingFr, ...missingUrls)
   return {
     pass: unsupported.length === 0,
     G: specs.every((spec) => foldedEvidence.includes(kappa(spec))) ? 1 : 0,

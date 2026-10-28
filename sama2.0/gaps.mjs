@@ -15,11 +15,11 @@ const MACHINE_PATTERNS = [
 
 const PHENOMENA = [
   ['发热/温升', /发热|温升|过热|发烫/],
-  ['振动', /震动|振动|抖动|振纹/],
+  ['振动', /震动|振动|抖动|振纹|密纹|波纹/],
   ['异响', /异响|噪声|噪音|啸叫/],
-  ['精度或表面', /精度|超差|烧伤|波纹|粗糙|圆度/],
-  ['运动异常', /爬行|卡滞|不转|停转/],
-  ['液压润滑', /泄漏|漏油|压力|断油|不上油/],
+  ['精度或表面', /精度|超差|烧伤|波纹|粗糙|圆度|密纹|拉毛|划伤/],
+  ['运动异常', /爬行|卡滞|不转|停转|抱轴|抱死|咬死|闷车/],
+  ['液压润滑', /泄漏|漏油|压力|油压|断油|不上油/],
   ['报警', /报警/],
 ]
 
@@ -163,23 +163,29 @@ function recognizedLine(fields) {
 }
 
 function matchLoad(text) {
+  const raw = String(text || '')
   const idleRes = [/空载/g, /空转/g, /不磨削/g, /未磨削/g, /没在磨/g]
-  const hits = []
-  let rest = String(text || '')
-  let idle = false
+  const idleMatches = []
+  let rest = raw
   for (const re of idleRes) {
-    const found = rest.match(re)
-    if (found) {
-      idle = true
-      hits.push(found[0])
-      rest = rest.replace(re, '')
-    }
+    for (const m of raw.matchAll(re)) idleMatches.push(m)
+    rest = rest.replace(re, '')
   }
-  const grindRe = /磨削|在磨|加工中|正在磨|切削/
-  const grindHit = rest.match(grindRe)
-  if (idle && grindHit) return { value: '', conflict: true, hits: [...hits, grindHit[0]] }
+  const grindHit = rest.match(/磨削|在磨|加工中|正在磨|切削/)
+  const idle = idleMatches.length > 0
+  const hits = [...idleMatches.map((m) => m[0]), ...(grindHit ? [grindHit[0]] : [])]
+  if (idle && grindHit) {
+    // 只有明确说两种工况都出现才算冲突；“空载振动 0.008 mm”这类是测量位置，不是发生工况。
+    const explicit = /空载[和与或、]?磨削|磨削[和与或、]?空载|(?:空载|空转)[^，。；]{0,8}(?:都|均)(?:出现|有|会)|(?:都|均)(?:出现|存在)/.test(raw)
+    const measurement = idleMatches.some((m) => {
+      const after = raw.slice(m.index + m[0].length, m.index + m[0].length + 12)
+      return /(振动|噪声|噪音|电流|温度|温升|读数|实测|测得|值|mm|μm|0\.\d)/.test(after)
+    })
+    if (explicit || !measurement) return { value: '', conflict: true, hits }
+    return { value: '磨削', conflict: false, hits }
+  }
   if (idle) return { value: '空载', conflict: false, hits }
-  if (grindHit) return { value: '磨削', conflict: false, hits: [grindHit[0]] }
+  if (grindHit) return { value: '磨削', conflict: false, hits }
   return { value: '', conflict: false, hits: [] }
 }
 

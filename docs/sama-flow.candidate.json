@@ -1,0 +1,275 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "SAMA 2.0 多路诊断流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": ".archify/workflow-sama-multiagent-20261028-095000/sama-flow.html"
+  },
+  "lanes": [
+    {
+      "id": "input",
+      "label": "用户与请求"
+    },
+    {
+      "id": "graph",
+      "label": "LangGraph 编排"
+    },
+    {
+      "id": "agents",
+      "label": "五路求解"
+    },
+    {
+      "id": "data",
+      "label": "证据层"
+    },
+    {
+      "id": "review",
+      "label": "评审与交付"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "受理与门控",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "sample",
+      "label": "分路采样",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "review",
+      "label": "核对与评分交付",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "user",
+    "intake",
+    "gate",
+    "route",
+    "five",
+    "ground",
+    "judge",
+    "reply"
+  ],
+  "nodes": [
+    {
+      "id": "user",
+      "lane": "input",
+      "col": 0,
+      "type": "external",
+      "label": "用户",
+      "sublabel": "磨床故障描述",
+      "width": 176,
+      "height": 58
+    },
+    {
+      "id": "intake",
+      "lane": "graph",
+      "col": 1,
+      "type": "backend",
+      "label": "intake 事实抽取",
+      "sublabel": "机型·现象·工况·冷热",
+      "width": 196,
+      "height": 58
+    },
+    {
+      "id": "gate",
+      "lane": "graph",
+      "col": 2,
+      "type": "security",
+      "label": "必填项门控",
+      "sublabel": "缺一项就追问",
+      "width": 176,
+      "height": 58
+    },
+    {
+      "id": "ask",
+      "lane": "input",
+      "col": 2,
+      "type": "security",
+      "label": "追问 need_info",
+      "sublabel": "等待补充后重跑",
+      "width": 176,
+      "height": 58
+    },
+    {
+      "id": "route",
+      "lane": "graph",
+      "col": 3,
+      "type": "backend",
+      "label": "复杂度路由",
+      "sublabel": "simple / boundary / complex",
+      "width": 196,
+      "height": 58
+    },
+    {
+      "id": "five",
+      "lane": "agents",
+      "col": 3,
+      "type": "backend",
+      "label": "sub0–sub4 并行求解",
+      "sublabel": "各自查资料、独立成稿",
+      "tag": "步数预算",
+      "width": 206,
+      "height": 58
+    },
+    {
+      "id": "sqlite",
+      "lane": "data",
+      "col": 3,
+      "type": "database",
+      "label": "SQLite 资料库",
+      "sublabel": "1.34 GiB · 19.9 万片段",
+      "width": 196,
+      "height": 58
+    },
+    {
+      "id": "ground",
+      "lane": "review",
+      "col": 4,
+      "type": "security",
+      "label": "引用核对 grounding",
+      "sublabel": "数字/ID 必须有出处",
+      "width": 196,
+      "height": 58
+    },
+    {
+      "id": "judge",
+      "lane": "review",
+      "col": 5,
+      "type": "backend",
+      "label": "Judge + 准确性审计",
+      "sublabel": "五维加权选冠军",
+      "tag": "模型可独立",
+      "width": 196,
+      "height": 58
+    },
+    {
+      "id": "reply",
+      "lane": "input",
+      "col": 5,
+      "type": "frontend",
+      "label": "诊断方案",
+      "sublabel": "评分 + 待确认问题",
+      "width": 176,
+      "height": 58
+    }
+  ],
+  "edges": [
+    {
+      "id": "ask-intake",
+      "from": "user",
+      "to": "intake",
+      "label": "故障描述",
+      "variant": "emphasis"
+    },
+    {
+      "id": "intake-gate",
+      "from": "intake",
+      "to": "gate",
+      "label": "抽取结果"
+    },
+    {
+      "id": "gate-ask",
+      "from": "gate",
+      "to": "ask",
+      "label": "缺项",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "ask-loop",
+      "from": "ask",
+      "to": "intake",
+      "label": "补充后重跑",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "gate-route",
+      "from": "gate",
+      "to": "route",
+      "label": "齐全",
+      "variant": "emphasis"
+    },
+    {
+      "id": "route-five",
+      "from": "route",
+      "to": "five",
+      "label": "分路采样",
+      "variant": "emphasis"
+    },
+    {
+      "id": "five-sqlite",
+      "from": "five",
+      "to": "sqlite",
+      "label": "search_knowledge / search_mtkb",
+      "variant": "dashed",
+      "role": "async"
+    },
+    {
+      "id": "sqlite-five",
+      "from": "sqlite",
+      "to": "five",
+      "label": "sqlite_* 引用 ID",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "five-ground",
+      "from": "five",
+      "to": "ground",
+      "label": "成稿 + 观察",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ground-judge",
+      "from": "ground",
+      "to": "judge",
+      "label": "幸存方案"
+    },
+    {
+      "id": "judge-reply",
+      "from": "judge",
+      "to": "reply",
+      "label": "冠军 + 评分",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "门控与交付规则",
+      "items": [
+        "四要素齐全才允许采样，否则整轮停在追问",
+        "至少半数路写成方案才交付，否则同样回到追问"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "资料层现状",
+      "items": [
+        "19.9 万片段中仅 33.5% 可检索，磨床专属占 6.1%",
+        "20 条人工核对试点，全部待审核"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "评分口径",
+      "items": [
+        "准确性 30% · 安全 25% · 可行 20% · 完整 15% · 简洁 10%",
+        "默认与生成同模型，可用 SAMA2_JUDGE_MODEL 拆开"
+      ]
+    }
+  ]
+}

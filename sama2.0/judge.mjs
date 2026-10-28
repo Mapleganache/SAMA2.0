@@ -4,18 +4,20 @@ import { callText } from './llm.mjs'
 import { logEvent } from './log.mjs'
 import { clampScore, normalizeScores, pickWinner } from './score.mjs'
 
-export async function safetyOnly({ query, plan, timeoutMs }) {
+export async function safetyOnly({ query, plan, timeoutMs, temperature = 0.1 }) {
   try {
     const response = await callText({
       system: `你做磨床方案安全抽查。只给安全性打 0 到 10 分，不选冠军，不写维修步骤。
 安全性看能量隔离、砂轮防护、是否阻止带电或带压拆卸。
 只输出 JSON：{"safety":0}`,
       user: `故障：\n${query}\n\n方案：\n${clip(plan?.plan || '', 4000)}`,
-      temperature: 0.1,
+      temperature,
       timeoutMs,
       maxTokens: 200,
+      purpose: 'judge',
     })
     const parsed = extractJson(response.content)
+    logEvent('safety', { safety: clampScore(parsed?.safety), model: response.model })
     return clampScore(parsed?.safety)
   } catch (error) {
     logEvent('safety_failed', { message: clip(error?.message || error, 300) })
@@ -23,41 +25,56 @@ export async function safetyOnly({ query, plan, timeoutMs }) {
   }
 }
 
-export async function judgePlans({ query, rubric, plans, timeoutMs }) {
+export async function judgePlans({ query, rubric, plans, timeoutMs, temperature = 0.1 }) {
   const usable = plans.filter((plan) => plan.status === 'done' && !String(plan.plan || '').startsWith('方案生成失败'))
   if (!usable.length) {
-    return { ok: false, winner: null, ranked: [], note: '没有可评判的有效方案' }
+    return { ok: false, winner: null, ranked: [], note: '没有可评判的有效方案', model: '' }
   }
 
   let rows = []
   let note = ''
+  let failed = false
+  let model = ''
   try {
     const response = await callText({
       system: judgeSystem(),
       user: judgeUser(query, rubric, plans),
-      temperature: 0.1,
+      temperature,
       timeoutMs,
       maxTokens: 2500,
+      purpose: 'judge',
     })
+    model = response.model || ''
     const parsed = extractJson(response.content)
     rows = Array.isArray(parsed?.scores) ? parsed.scores : []
     note = String(parsed?.note || '').trim()
   } catch (error) {
-    note = `评判模型调用失败，已按方案是否完整做保底选择：${error?.message || error}`
+    failed = true
+    note = `评判模型调用失败，未产生评分：${error?.message || error}`
     logEvent('judge_failed', { message: clip(error?.message || error, 300) })
+  }
+
+  // 评判不可用时不伪造 0 分排名：按完整度保底选一份，并明确标注“未评分”。
+  if (failed) {
+    const fallback = plans
+      .filter((plan) => plan.status === 'done' && !String(plan.plan || '').startsWith('方案生成失败'))
+      .sort((a, b) => (b.stepCount || 0) - (a.stepCount || 0))[0] || null
+    logEvent('judge_unscored', { id: fallback?.id || '', model })
+    return { ok: false, winner: fallback, ranked: [], fallback: true, note: note || '评判不可用，未产生评分', model }
   }
 
   const ranked = pickWinner(plans, rows.map(normalizeRow))
   if (!ranked.length) {
-    return { ok: false, winner: null, ranked: [], note: note || '评分结果无法对应到有效方案' }
+    return { ok: false, winner: null, ranked: [], note: note || '评分结果无法对应到有效方案', model }
   }
   const winner = ranked[0]
   logEvent('judge', {
     winner: winner.id,
     total: winner.total,
+    model,
     scores: ranked.map((row) => ({ id: row.id, total: row.total })),
   })
-  return { ok: true, winner, ranked, note }
+  return { ok: true, winner, ranked, note, model }
 }
 
 function normalizeRow(row) {
@@ -80,6 +97,7 @@ function judgeSystem() {
 
 function judgeUser(query, rubric, plans) {
   const notes = (rubric?.caseNotes || []).join('\n')
+  const checklist = String(rubric?.checklist || '').trim()
   const blocks = plans.map((plan) => {
     const observations = (plan.notes || []).map((note) => {
       const id = note.obsId || `${plan.id}-step${note.step}`
@@ -89,7 +107,8 @@ function judgeUser(query, rubric, plans) {
     const isolation = plan.supervisor?.isolation_noted ? '成稿写有隔离、断电或砂轮防护。' : '成稿未同时写明隔离、断电和砂轮防护。'
     return `方案 ${plan.id}（${plan.title}，状态 ${plan.status}）\n${stop}\n${isolation}\n${observations}\n\n成稿：\n${plan.plan}`
   }).join('\n\n----\n\n')
-  return `原始故障：\n${query}\n\n本题评判注意事项：\n${notes || '无'}\n\n幸存方案：\n${blocks}`
+  const checkBlock = checklist ? `\n\n${checklist}` : ''
+  return `原始故障：\n${query}\n\n本题评判注意事项：\n${notes || '无'}${checkBlock}\n\n幸存方案：\n${blocks}`
 }
 
 export function formatJudgement(plans, judgement, rejected = []) {
@@ -99,6 +118,17 @@ export function formatJudgement(plans, judgement, rejected = []) {
       .filter((plan) => String(plan.plan || '').startsWith('方案生成失败'))
       .map((plan) => `- ${plan.title}：方案生成失败`)
     return `本次没有可交付方案。\n\n${[...lines, ...failed].join('\n') || '没有幸存方案。'}`
+  }
+  if (judgement?.fallback) {
+    const fallbackPlan = plans.find((plan) => plan.id === judgement.winner.id)
+    const dropped = rejected.map((item) => `- ${item.title}（${item.id}）：${labelUnsupported(item.unsupported)}`)
+    return `${fallbackPlan?.plan || ''}
+
+---
+
+### 评分不可用
+评判模型调用失败，本次没有产生分数，按方案完整度保底交付：${judgement.winner.title}（未评分）。
+${dropped.length ? `\n未进入候选：\n${dropped.join('\n')}\n` : ''}${judgement.note ? `\n${judgement.note}` : ''}`
   }
   const winnerPlan = plans.find((plan) => plan.id === judgement.winner.id)
   const header = DIMENSIONS.map((dim) => dim.label).join(' | ')

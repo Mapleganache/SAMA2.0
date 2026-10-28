@@ -34,6 +34,7 @@ export async function superviseMid({ query, plan, notes, timeoutMs, deadline, mt
         timeoutMs,
         deadline,
         maxTokens: 800,
+        purpose: 'judge',
       })
       content = response.content
       const parsed = extractJson(content)

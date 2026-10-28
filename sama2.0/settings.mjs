@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
-let runtime = { baseUrl: '', model: '', apiKey: '' }
+let runtime = { baseUrl: '', model: '', judgeModel: '', apiKey: '' }
 
 export function sama2Root() {
   return ROOT
@@ -13,6 +13,7 @@ export function setRuntimeLlm(partial = {}) {
   runtime = {
     baseUrl: String(partial.baseUrl || '').trim(),
     model: String(partial.model || '').trim(),
+    judgeModel: String(partial.judgeModel || '').trim(),
     apiKey: String(partial.apiKey || '').trim(),
   }
 }
@@ -27,6 +28,7 @@ export function loadLlmSettings() {
   }
   const baseUrl = String(runtime.baseUrl || process.env.SAMA2_BASE_URL || saved.baseUrl || 'https://api.deepseek.com').replace(/\/$/, '')
   const model = String(runtime.model || process.env.SAMA2_MODEL || saved.model || 'deepseek-chat')
+  const judgeModel = String(runtime.judgeModel || process.env.SAMA2_JUDGE_MODEL || saved.judgeModel || '').trim() || model
   const apiKey = String(runtime.apiKey || process.env.SAMA2_API_KEY || saved.apiKey || '').trim()
-  return { baseUrl, model, apiKey }
+  return { baseUrl, model, judgeModel, apiKey }
 }

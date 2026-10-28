@@ -1,4 +1,5 @@
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
+import { buildBrief } from './brief.mjs'
 import { resolveConfig } from './config.mjs'
 import { classifyByRules } from './complexity.mjs'
 import { extractFaultFacts } from './facts.mjs'
@@ -21,6 +22,7 @@ const DiagnosisState = Annotation.Root({
   facts: Annotation(),
   hard: Annotation(),
   complexity: Annotation(),
+  brief: Annotation(),
   plans: Annotation(),
   asked: Annotation(),
   need: Annotation(),
@@ -41,7 +43,7 @@ async function intake(state) {
   const facts = extractFaultFacts(query)
   logEvent('start', { chars: query.length, force: config.forceMultiAgent, maxStep: config.maxStep })
   const hard = classifyByRules(query)
-  const base = { config, sessionQuery, query, facts, hard }
+  const base = { config, sessionQuery, query, facts, hard, brief: null }
 
   if (!config.forceMultiAgent && hard?.level === 'simple') return { ...base, next: 'simple' }
 
@@ -71,9 +73,9 @@ async function intake(state) {
   }
 
   if (config.forceMultiAgent) {
-    return { ...base, complexity: { level: 'complex', reason: 'force_multi_agent 已开启，跳过复杂度判断', source: 'force' }, next: 'sample' }
+    return { ...base, complexity: { level: 'complex', reason: 'force_multi_agent 已开启，跳过复杂度判断', source: 'force' }, next: 'main_brief' }
   }
-  if (hard?.level === 'complex') return { ...base, complexity: hard, next: 'sample' }
+  if (hard?.level === 'complex') return { ...base, complexity: hard, next: 'main_brief' }
   return { ...base, next: 'classify' }
 }
 
@@ -97,23 +99,61 @@ function needInfoNode(state) {
 async function classifyNode(state) {
   const complexity = await classifyComplexity(state.query, { llmTimeoutMs: state.config.llmTimeoutMs })
   if (complexity.level === 'simple') return { complexity, next: 'simple' }
-  return { complexity: { ...complexity, level: 'boundary' }, next: 'sample' }
+  return { complexity: { ...complexity, level: 'boundary' }, next: 'main_brief' }
+}
+
+async function briefNode(state) {
+  const { query, facts, complexity, config } = state
+  if (!config.briefEnabled) return { brief: null, next: 'sample' }
+  const brief = await buildBrief({
+    query,
+    facts,
+    complexity,
+    timeoutMs: config.llmTimeoutMs,
+  })
+  logEvent('brief', {
+    ok: Boolean(brief.ok),
+    hypotheses: brief.hypotheses?.length || 0,
+    mustCheck: brief.mustCheck?.length || 0,
+    source: brief.source || '',
+  })
+  return { brief, next: 'sample' }
 }
 
 async function sampleNode(state) {
-  const { query, config, facts, complexity, sessionQuery, started } = state
+  const { query, config, facts, complexity, sessionQuery, started, brief } = state
   const budget = createStepBudget(config.sampleCount * config.maxStep)
   const runTool = createToolRunner({ query, facts, allowWeb: config.allowWeb, mtkbUrl: config.mtkbUrl })
   let plans = []
   let waves = 0
   if (complexity.level === 'complex') {
-    plans = await sampleWave({ query, count: config.sampleCount, start: 0, config, budget, runTool, supplements: sessionQuery.supplements, wave: ++waves })
+    plans = await sampleWave({
+      query,
+      count: config.sampleCount,
+      start: 0,
+      config,
+      budget,
+      runTool,
+      supplements: sessionQuery.supplements,
+      wave: ++waves,
+      brief,
+    })
   } else {
-    plans = await sampleWave({ query, count: 1, start: 0, config, budget, runTool, supplements: sessionQuery.supplements, wave: ++waves })
+    plans = await sampleWave({
+      query,
+      count: 1,
+      start: 0,
+      config,
+      budget,
+      runTool,
+      supplements: sessionQuery.supplements,
+      wave: ++waves,
+      brief,
+    })
     const asked = collectQuestions(plans)
     if (!asked.questions.length && plans[0] && plans[0].status !== 'failed') {
       const firstGround = checkGrounding(plans[0].plan, evidenceText(plans[0].notes))
-      const safety = await safetyOnly({ query, plan: plans[0], timeoutMs: config.llmTimeoutMs })
+      const safety = await safetyOnly({ query, plan: plans[0], timeoutMs: config.llmTimeoutMs, temperature: config.tauJudge })
       const trigger = String(plans[0].plan || '').includes('信息不足') || safety < config.thetaB || firstGround.G === 0
       if (trigger && waves < config.waveCap) {
         const rest = await sampleWave({
@@ -125,6 +165,7 @@ async function sampleNode(state) {
           runTool,
           supplements: sessionQuery.supplements,
           wave: ++waves,
+          brief,
         })
         plans = plans.concat(rest)
       }
@@ -138,7 +179,11 @@ async function sampleNode(state) {
   }
 
   const asked = collectQuestions(plans)
-  if (asked.questions.length || plans.some((plan) => plan.supervisor?.missing?.length)) {
+  const finished = plans.filter((plan) => plan.status === 'done' && plan.plan && !isFailedPlan(plan))
+  const needAsk = Boolean(asked.questions.length || plans.some((plan) => plan.supervisor?.missing?.length))
+  // 多数路已写成方案时仍交付；只有写完的路不到一半才整轮停在补充问题。
+  const majority = Math.ceil((plans.length || 1) / 2)
+  if (needAsk && finished.length < majority) {
     const questions = asked.questions.length ? asked.questions : questionsFor(query).questions
     return {
       plans,
@@ -162,16 +207,27 @@ async function sampleNode(state) {
 }
 
 async function verifyNode(state) {
-  const { query, plans, facts, complexity, config, started } = state
+  const { query, plans, asked, facts, complexity, config, started, brief } = state
   const finished = plans.filter((plan) => plan.status === 'done' && plan.plan && !isFailedPlan(plan))
-  const judged = await verifyPlans({ query, plans: finished.length ? finished : plans, reportPlans: plans, facts, config })
-  const answer = `（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，只交付综合分选出的一份：${complexity.reason}）\n\n${judged.answer}`
+  const judged = await verifyPlans({
+    query,
+    plans: finished.length ? finished : plans,
+    reportPlans: plans,
+    facts,
+    config,
+    brief,
+  })
+  const pending = asked?.questions?.length
+    ? `\n\n### 待确认问题\n另有 ${asked.questions.length} 条待确认：\n${asked.questions.map((item, index) => `${index + 1}. ${item.text}`).join('\n')}`
+    : ''
+  const answer = `（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，只交付综合分选出的一份：${complexity.reason}）\n\n${judged.answer}${pending}`
   const result = pack({
     route: judged.winner ? 'complex' : 'no_plan',
     answer,
     complexity,
     facts,
-    rubric: buildRubric(facts),
+    brief: brief || null,
+    rubric: judged.rubric || buildRubric(facts, brief),
     plans: plans.map(publicPlanSafe),
     judge: judged.judge,
     accuracy: judged.accuracy,
@@ -198,6 +254,7 @@ function publicPlanSafe(plan) {
     trace: plan.trace,
     stopReason: plan.stopReason || '',
     questions: plan.questions || [],
+    briefDeviation: plan.briefDeviation || '',
     unsupported: plan.ground?.unsupported || [],
     supervisor: plan.supervisor
       ? {
@@ -215,11 +272,13 @@ export const diagnosisGraph = new StateGraph(DiagnosisState)
   .addNode('simple', simpleNode)
   .addNode('need_info', needInfoNode)
   .addNode('classify', classifyNode)
+  .addNode('main_brief', briefNode)
   .addNode('sample', sampleNode)
   .addNode('verify', verifyNode)
   .addEdge(START, 'intake')
-  .addConditionalEdges('intake', (state) => state.next, ['simple', 'need_info', 'classify', 'sample'])
-  .addConditionalEdges('classify', (state) => state.next, ['simple', 'sample'])
+  .addConditionalEdges('intake', (state) => state.next, ['simple', 'need_info', 'classify', 'main_brief'])
+  .addConditionalEdges('classify', (state) => state.next, ['simple', 'main_brief'])
+  .addConditionalEdges('main_brief', (state) => state.next, ['sample'])
   .addConditionalEdges('sample', (state) => state.next, ['need_info', 'verify'])
   .addEdge('simple', END)
   .addEdge('need_info', END)
@@ -227,6 +286,6 @@ export const diagnosisGraph = new StateGraph(DiagnosisState)
   .compile()
 
 export async function runSama2(options = {}) {
-  const output = await diagnosisGraph.invoke({ options, started: Date.now() }, { recursionLimit: 12 })
+  const output = await diagnosisGraph.invoke({ options, started: Date.now() }, { recursionLimit: 14 })
   return output.result
 }

@@ -4,6 +4,7 @@
 process.env.SAMA2_API_KEY = 'test-key'
 process.env.SAMA2_BASE_URL = 'http://127.0.0.1:9/v1'
 process.env.SAMA2_MODEL = 'test-model'
+process.env.SAMA2_JUDGE_MODEL = 'test-judge-model'
 
 const calls = []
 const control = {
@@ -17,8 +18,28 @@ globalThis.fetch = async (_url, init) => {
   const body = JSON.parse(init.body)
   const system = body.messages[0].content
   const user = body.messages[1].content
-  calls.push({ system, user, temperature: body.temperature, seed: body.seed })
+  calls.push({ system, user, temperature: body.temperature, seed: body.seed, model: body.model })
 
+  if (system.includes('主控分析员')) {
+    return jsonResponse({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            phenomena: ['发热'],
+            hypotheses: [
+              { id: 'h1', claim: '润滑不足', checks: ['查油压'] },
+              { id: 'h2', claim: '轴承预紧异常', checks: ['查预紧'] },
+            ],
+            mustCheck: ['空载与磨削分离', '冷机与热机对比'],
+            exclusions: ['不得编造未实测数值'],
+            acceptance: ['假设要有验证步骤'],
+            confidence: 0.6,
+            note: '',
+          }),
+        },
+      }],
+    })
+  }
   if (system.includes('问题分类器')) {
     return jsonResponse({ choices: [{ message: { content: `{"level":"${control.classifier}","reason":"分类器结果"}` } }] })
   }
@@ -151,6 +172,7 @@ check('子代理之间看不到对方记录', sub1Notes.length > 0 && sub1Notes.
 check('只交付综合分最高的一份', complex.judge?.winnerId === 'sub1' && complex.accuracy?.bestId === 'sub1' && complex.answer.includes('第2路的完整维修方案') && complex.answer.includes('评分汇总') && !complex.answer.includes('两项分别保留'))
 check('审计附在中选方案后面', complex.accuracy?.accuracy === 8 && complex.accuracy?.credibility === 7 && complex.answer.includes('审计附录'))
 check('流程走向和思考被记下来', complex.flow?.some((step) => step.title === '判定为复杂问题') && complex.plans.every((plan) => plan.trace.some((step) => step.thought)))
+check('brief 存在时 judge prompt 含检查表', complex.brief?.ok === true && calls.some((call) => call.system.includes('评判员') && call.user.includes('评分检查表')))
 
 calls.length = 0
 control.failRole = '第3路独立求解'
@@ -179,8 +201,14 @@ calls.length = 0
 control.askLane = '第3路独立求解'
 const mixed = await runSama2({ userText: ready, maxStep: 4 })
 control.askLane = ''
-check('有一路提问时不交付已写好的步骤', mixed.route === 'need_info' && mixed.judge == null && mixed.answer.includes('砂轮主轴还是头架') && mixed.answer.includes('还不能给出排查步骤') && !mixed.answer.includes('第2路的完整维修方案'))
-check('提问留在各路记录里', mixed.plans.some((plan) => plan.status === 'need_info') && mixed.plans.some((plan) => String(plan.plan || '').includes('完整维修方案')))
+check('多数路已写完时一路提问仍交付', mixed.route === 'complex' && mixed.answer.includes('第2路的完整维修方案') && mixed.answer.includes('待确认问题') && mixed.answer.includes('砂轮主轴还是头架'))
+check('提问的那一路不参与中选', mixed.plans.some((plan) => plan.status === 'need_info') && mixed.judge?.winnerId === 'sub1')
+
+const judgeCalls = calls.filter((item) => /评判员|准确性专评|安全抽查|独立监督者/.test(item.system))
+const generateCalls = calls.filter((item) => /独立求解|问题分类器|这是简单问题/.test(item.system))
+check('评判走独立模型名', judgeCalls.length > 0 && judgeCalls.every((item) => item.model === 'test-judge-model'))
+check('生成仍用生成模型名', generateCalls.length > 0 && generateCalls.every((item) => item.model === 'test-model'))
+check('结果带回评判模型', mixed.judge?.model === 'test-judge-model' && mixed.meta?.judgeModel === 'test-judge-model')
 
 if (problems.length) {
   console.error(`\n${problems.length} failed: ${problems.join('、')}`)

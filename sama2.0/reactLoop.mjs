@@ -58,6 +58,7 @@ function createLane(options) {
     errorCode: '',
     questions: [],
     stopReason: '',
+    briefDeviation: '',
     supervisor: null,
     pendingTool: false,
     decision: null,
@@ -175,6 +176,7 @@ async function modelStep(lane, ctx) {
 
   if (mustFinish || decision.final || !decision.tool) {
     lane.stopReason = reason || (decision.final ? 'final' : 'no_tool')
+    if (decision.briefDeviation) lane.briefDeviation = decision.briefDeviation
     if (decision.final) lane.plan = decision.final
     else if (mustFinish) {
       lane.plan = await finishFromNotes(lane, ctx, Math.min(ctx.llmTimeoutMs, left), stepCap ? '达到轮次上限' : '工具次数已满')
@@ -335,12 +337,13 @@ function parseDecision(text, mustFinish) {
   }
   const thought = String(obj.thought || '').trim()
   const finalText = String(obj.final || obj.answer || '').trim()
-  if (mustFinish) return { thought, final: finalText, tool: '' }
-  if (finalText) return { thought, final: finalText, tool: '' }
+  const briefDeviation = String(obj.brief_deviation || obj.briefDeviation || '').trim()
+  if (mustFinish) return { thought, final: finalText, tool: '', briefDeviation }
+  if (finalText) return { thought, final: finalText, tool: '', briefDeviation }
   const tool = String(obj.tool || obj.action || '').trim()
-  if (!tool || tool === 'none' || tool === 'null') return { thought, final: thought, tool: '' }
+  if (!tool || tool === 'none' || tool === 'null') return { thought, final: thought, tool: '', briefDeviation }
   const args = obj.args && typeof obj.args === 'object' ? obj.args : {}
-  return { thought, tool, args }
+  return { thought, tool, args, briefDeviation }
 }
 
 async function finishFromNotes(state, ctx, llmTimeoutMs, why) {

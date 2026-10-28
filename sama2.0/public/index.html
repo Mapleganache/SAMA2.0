@@ -12,7 +12,7 @@
     input, textarea { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; }
     input[type="checkbox"] { width: auto; margin-right: 6px; }
     textarea { min-height: 96px; }
-    .row { display: grid; grid-template-columns: 1fr 160px 180px; gap: 12px; }
+    .row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 140px; gap: 12px; }
     .checks { display: flex; gap: 20px; align-items: center; margin-top: 8px; }
     .checks label { margin: 0; }
     button { margin-top: 16px; padding: 8px 16px; font: inherit; }
@@ -46,8 +46,12 @@
       <input id="baseUrl" value="https://api.deepseek.com" />
     </div>
     <div>
-      <label>模型</label>
+      <label>生成模型</label>
       <input id="model" value="deepseek-chat" />
+    </div>
+    <div>
+      <label>评判模型（可空，空则同生成）</label>
+      <input id="judgeModel" placeholder="例如 deepseek-chat 或其它模型名" />
     </div>
     <div>
       <label>每路最多轮次</label>
@@ -66,7 +70,7 @@
   <pre id="out">结果会显示在这里。</pre>
   <section id="authorPanel" class="panel" hidden></section>
   <script>
-    const fields = ['apiKey', 'baseUrl', 'model', 'maxStep']
+    const fields = ['apiKey', 'baseUrl', 'model', 'judgeModel', 'maxStep']
     for (const id of fields) {
       const saved = localStorage.getItem('sama2-' + id)
       if (saved) document.getElementById(id).value = saved
@@ -91,6 +95,7 @@
         apiKey: document.getElementById('apiKey').value,
         baseUrl: document.getElementById('baseUrl').value,
         model: document.getElementById('model').value,
+        judgeModel: document.getElementById('judgeModel').value,
         maxStep: Number(document.getElementById('maxStep').value) || 8,
         forceMultiAgent: document.getElementById('force').checked,
         allowWeb: webBox.checked,

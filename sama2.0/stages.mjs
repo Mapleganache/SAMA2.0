@@ -1,4 +1,5 @@
 import { auditWinner, formatAudit } from './accuracyJudge.mjs'
+import { formatBriefForLane } from './brief.mjs'
 import { renderNeedInfo } from './gaps.mjs'
 import { checkGrounding, evidenceText, isFailedPlan } from './grounding.mjs'
 import { waveDeadline } from './guard.mjs'
@@ -9,11 +10,12 @@ import { mapLimit } from './pool.mjs'
 import { buildRoles } from './prompts.mjs'
 import { runReactSub } from './reactLoop.mjs'
 import { buildRubric } from './rubric.mjs'
+import { loadLlmSettings } from './settings.mjs'
 import { createToolRunner } from './tools.mjs'
 
 export async function finishSimple({ query, facts, hard, options, config, started }) {
   const simple = await answerSimple({ query, history: options.history, llmTimeoutMs: config.llmTimeoutMs })
-  const ground = checkGrounding(simple.text, simple.evidence || '')
+  const ground = checkGrounding(simple.text, `${simple.evidence || ''}\n用户原文：\n${query || ''}`)
   const prefix = ground.pass ? '' : `这些扭矩、间隙或压力没有出现在本次资料观察中，不能当作事实：${ground.unsupported.join('、')}。\n\n`
   const flow = [
     factStep(facts),
@@ -81,11 +83,11 @@ export function finishNeedInfo({ query, facts, complexity, gap, plans, deferred 
   })
 }
 
-export async function sampleWave({ query, count, start, config, budget, runTool, supplements, wave }) {
+export async function sampleWave({ query, count, start, config, budget, runTool, supplements, wave, brief }) {
   if (wave > config.waveCap) {
     return [blockedWave(start)]
   }
-  const roles = buildRoles(count, { start, allowWeb: config.allowWeb })
+  const roles = buildRoles(count, { start, allowWeb: config.allowWeb }).map((role) => applyBriefToRole(role, brief))
   const startedAt = Date.now()
   const deadline = waveDeadline(startedAt, config.subTimeoutMs, count, config.staggerMs)
   return mapLimit(roles, config.concurrency, async (role, index) => {
@@ -111,6 +113,15 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
   })
 }
 
+function applyBriefToRole(role, brief) {
+  if (!brief?.ok) return role
+  const appendix = formatBriefForLane(brief)
+  const counter = role.index === 4
+    ? '\n你的职责是挑战上面的分析，优先找反例与遗漏，不要顺着它写。'
+    : ''
+  return { ...role, system: `${role.system}\n\n${appendix}${counter}` }
+}
+
 function blockedWave(start) {
   return {
     id: `sub${start}`,
@@ -128,12 +139,13 @@ function blockedWave(start) {
   }
 }
 
-export async function verifyPlans({ query, plans, reportPlans, facts, config }) {
+export async function verifyPlans({ query, plans, reportPlans, facts, config, brief }) {
   const rejected = []
   const survivors = []
   for (const plan of plans) {
     if (isFailedPlan(plan) || plan.status === 'failed') continue
-    const ground = checkGrounding(plan.plan, evidenceText(plan.notes))
+    // 用户原文里的读数算「用户提供」证据；编造的数字仍因不在原文与观察里而失败。
+    const ground = checkGrounding(plan.plan, `${evidenceText(plan.notes)}\n用户原文：\n${query || ''}`)
     plan.ground = ground
     if (!ground.pass || plan.status !== 'done') {
       rejected.push({ id: plan.id, title: plan.title, unsupported: ground.unsupported })
@@ -150,19 +162,21 @@ export async function verifyPlans({ query, plans, reportPlans, facts, config }) 
       answer: formatJudgement(plans, { winner: null, ranked: [], note: '' }, rejected),
     }
   }
+  const rubric = buildRubric(facts, brief)
   const judgement = await judgePlans({
     query,
-    rubric: buildRubric(facts),
+    rubric,
     plans: survivors,
     timeoutMs: config.llmTimeoutMs,
+    temperature: config.tauJudge,
   })
   const winner = judgement.winner ? survivors.find((plan) => plan.id === judgement.winner.id) : null
   const accuracy = winner
-    ? await auditWinner({ query, plan: winner, timeoutMs: config.llmTimeoutMs })
+    ? await auditWinner({ query, plan: winner, timeoutMs: config.llmTimeoutMs, temperature: config.tauJudge })
     : null
   if (accuracy) accuracy.bestId = winner.id
   const answer = `${formatJudgement(reportPlans || plans, judgement, rejected)}${winner ? formatAudit(accuracy) : ''}`
-  return { winner, judge: judgement, accuracy, rejected, answer }
+  return { winner, judge: judgement, accuracy, rejected, answer, rubric }
 }
 
 export function flowFor(facts, complexity, plans, judged) {
@@ -244,6 +258,7 @@ function publicPlan(plan) {
     trace: plan.trace,
     stopReason: plan.stopReason || '',
     questions: plan.questions || [],
+    briefDeviation: plan.briefDeviation || '',
     unsupported: plan.ground?.unsupported || [],
     supervisor: plan.supervisor
       ? {
@@ -257,13 +272,15 @@ function publicPlan(plan) {
 }
 
 export function pack(result) {
-  logEvent('finish', { route: result.route, ms: Date.now() - result.started, level: result.complexity?.level })
+  const llm = loadLlmSettings()
+  logEvent('finish', { route: result.route, ms: Date.now() - result.started, level: result.complexity?.level, model: llm.model, judgeModel: llm.judgeModel })
   return {
     content: result.answer,
     answer: result.answer,
     route: result.route,
     complexity: result.complexity,
     facts: result.facts,
+    brief: result.brief || null,
     rubric: result.rubric,
     plans: result.plans,
     judge: result.judge
@@ -272,6 +289,7 @@ export function pack(result) {
           total: result.judge.winner?.total ?? null,
           ranked: result.judge.ranked || [],
           note: result.judge.note || '',
+          model: result.judge.model || '',
         }
       : null,
     accuracy: result.accuracy
@@ -283,6 +301,7 @@ export function pack(result) {
           reason: result.accuracy.reason || '',
           ranked: result.accuracy.ranked || [],
           note: result.accuracy.note || '',
+          model: result.accuracy.model || '',
         }
       : null,
     rejected: result.rejected || [],
@@ -299,6 +318,8 @@ export function pack(result) {
       concurrency: result.config.concurrency,
       allowWeb: result.config.allowWeb,
       elapsedMs: Date.now() - result.started,
+      model: llm.model,
+      judgeModel: llm.judgeModel,
     },
   }
 }

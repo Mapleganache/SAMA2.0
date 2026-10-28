@@ -29,6 +29,7 @@ const server = http.createServer(async (request, response) => {
         apiKey: body.apiKey,
         baseUrl: body.baseUrl,
         model: body.model,
+        judgeModel: body.judgeModel,
       })
       const result = await runSama2({
         userText: body.userText,

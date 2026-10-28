@@ -2,8 +2,17 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { ChatOpenAI } from '@langchain/openai'
 import { loadLlmSettings } from './settings.mjs'
 
-export async function callText({ system, user, temperature = 0.2, timeoutMs = 90000, maxTokens = 4096, seed, deadline }) {
-  const run = () => complete({ system, user, temperature, timeoutMs, maxTokens, seed })
+export async function callText({
+  system,
+  user,
+  temperature = 0.2,
+  timeoutMs = 90000,
+  maxTokens = 4096,
+  seed,
+  deadline,
+  purpose = 'generate',
+}) {
+  const run = () => complete({ system, user, temperature, timeoutMs, maxTokens, seed, purpose })
   try {
     return await run()
   } catch (error) {
@@ -12,13 +21,13 @@ export async function callText({ system, user, temperature = 0.2, timeoutMs = 90
       if (deadline && Date.now() >= deadline) throw error
       await delay(2000)
       if (deadline && Date.now() >= deadline) throw error
-      return complete({ system, user, temperature, timeoutMs, maxTokens, seed })
+      return complete({ system, user, temperature, timeoutMs, maxTokens, seed, purpose })
     }
     throw error
   }
 }
 
-async function complete({ system, user, temperature, timeoutMs, maxTokens, seed }) {
+async function complete({ system, user, temperature, timeoutMs, maxTokens, seed, purpose }) {
   const settings = loadLlmSettings()
   if (!settings.apiKey) {
     const error = new Error('未配置 API Key。请在 sama2.0/settings.json 填写 apiKey，或设置环境变量 SAMA2_API_KEY。')
@@ -26,8 +35,9 @@ async function complete({ system, user, temperature, timeoutMs, maxTokens, seed 
     throw error
   }
 
+  const modelName = purpose === 'judge' ? settings.judgeModel : settings.model
   const model = new ChatOpenAI({
-    model: settings.model,
+    model: modelName,
     apiKey: settings.apiKey,
     temperature,
     maxTokens,
@@ -56,7 +66,7 @@ async function complete({ system, user, temperature, timeoutMs, maxTokens, seed 
     error.code = 'EMPTY'
     throw error
   }
-  return { content, model: settings.model }
+  return { content, model: modelName, purpose }
 }
 
 function messageText(response) {

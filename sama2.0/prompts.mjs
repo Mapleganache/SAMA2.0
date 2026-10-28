@@ -47,7 +47,7 @@ export function thinkInstruction({ system, toolNames, mustFinish }) {
     return `${system}
 你已达到本轮上限，禁止再调用工具。
 按你自己的理解，把目前的判断整理成完整维修方案。
-只输出 JSON：{"thought":"收束理由","final":"完整维修方案 Markdown"}`
+只输出 JSON：{"thought":"收束理由","final":"完整维修方案 Markdown","brief_deviation":"可空，一句话说明与主控分析哪里不一致"}`
   }
   return `${system}
 你正在独立求解这道磨床故障。可以调用工具，也可以在你认为证据够用时直接给出方案。
@@ -55,6 +55,6 @@ export function thinkInstruction({ system, toolNames, mustFinish }) {
 ${toolGuide(toolNames)}
 只输出 JSON，不要多余文字。二选一：
 {"thought":"这一步为什么要查或为什么可以收束","tool":"工具名","args":{}}
-{"thought":"为什么可以收束","final":"完整维修方案 Markdown"}
+{"thought":"为什么可以收束","final":"完整维修方案 Markdown","brief_deviation":"可空，一句话说明与主控分析哪里不一致"}
 不要重复调用已经用过且无新信息的同一查询。`
 }

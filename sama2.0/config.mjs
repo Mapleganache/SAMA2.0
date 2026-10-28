@@ -21,6 +21,9 @@ export function resolveConfig(options = {}) {
   const concurrency = clampInt(options.concurrency ?? 5, 1, 5)
   const seedBase = clampInt(options.seedBase ?? (Number.isFinite(envSeed) ? envSeed : 1000), 0, 100000000)
   const allowWeb = Boolean(options.allowWeb) || /^(1|true|yes)$/i.test(String(process.env.SAMA2_ALLOW_WEB || ''))
+  const briefEnabled = options.briefEnabled != null
+    ? Boolean(options.briefEnabled)
+    : /^(1|true|yes)$/i.test(String(process.env.SAMA2_BRIEF ?? '1'))
   return {
     forceMultiAgent: Boolean(options.forceMultiAgent) || envForce,
     maxStep,
@@ -39,6 +42,7 @@ export function resolveConfig(options = {}) {
     waveCap: 2,
     staggerMs: 400,
     allowWeb,
+    briefEnabled,
     mtkbUrl: String(options.mtkbUrl || process.env.SAMA2_MTKB_URL || 'http://127.0.0.1:8765'),
   }
 }
