@@ -87,7 +87,9 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
   if (wave > config.waveCap) {
     return [blockedWave(start)]
   }
-  const roles = buildRoles(count, { start, allowWeb: config.allowWeb }).map((role) => applyBriefToRole(role, brief))
+  // 用户已经补充过一轮后，不再提供 ask_user，避免反复追问进不了评分。
+  const allowAskUser = !(Array.isArray(supplements) && supplements.length)
+  const roles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser }).map((role) => applyBriefToRole(role, brief))
   const startedAt = Date.now()
   const deadline = waveDeadline(startedAt, config.subTimeoutMs, count, config.staggerMs)
   return mapLimit(roles, config.concurrency, async (role, index) => {

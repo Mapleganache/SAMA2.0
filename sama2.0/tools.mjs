@@ -57,7 +57,7 @@ export function buildDiagnosticTools({ query = '', facts = {}, allowWeb = false,
       },
       {
         name: 'ask_user',
-        description: '向用户提一个还没写清的分叉。一路最多两个问题。',
+        description: '仅在缺少机型、现象、空载/磨削、冷机/热机等硬分叉时提问。细节可先假设，不要反复追问。',
         schema: z.object({
           questions: z.array(z.object({ id: z.string().optional(), text: z.string().optional() }).passthrough()).optional(),
         }).passthrough(),

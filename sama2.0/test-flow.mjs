@@ -201,8 +201,18 @@ calls.length = 0
 control.askLane = '第3路独立求解'
 const mixed = await runSama2({ userText: ready, maxStep: 4 })
 control.askLane = ''
-check('多数路已写完时一路提问仍交付', mixed.route === 'complex' && mixed.answer.includes('第2路的完整维修方案') && mixed.answer.includes('待确认问题') && mixed.answer.includes('砂轮主轴还是头架'))
+check('有一路写完就交付并附待确认', mixed.route === 'complex' && mixed.answer.includes('第2路的完整维修方案') && mixed.answer.includes('待确认问题') && mixed.answer.includes('砂轮主轴还是头架'))
 check('提问的那一路不参与中选', mixed.plans.some((plan) => plan.status === 'need_info') && mixed.judge?.winnerId === 'sub1')
+
+calls.length = 0
+const afterAsk = await runSama2({
+  userText: '已补充：滚动轴承，循环油润滑',
+  session: { origin: ready, pending: [], supplements: [{ id: 'reply', text: '已补充：滚动轴承，循环油润滑' }] },
+  maxStep: 4,
+})
+const toolGuides = calls.filter((call) => call.system.includes('可用工具'))
+check('补充后工具表去掉 ask_user', toolGuides.length > 0 && toolGuides.every((call) => !call.system.includes('ask_user：')))
+check('补充后能进入评分路由', afterAsk.route === 'complex' && Boolean(afterAsk.judge?.winnerId))
 
 const judgeCalls = calls.filter((item) => /评判员|准确性专评|安全抽查|独立监督者/.test(item.system))
 const generateCalls = calls.filter((item) => /独立求解|问题分类器|这是简单问题/.test(item.system))

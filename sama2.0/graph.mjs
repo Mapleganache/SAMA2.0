@@ -181,9 +181,8 @@ async function sampleNode(state) {
   const asked = collectQuestions(plans)
   const finished = plans.filter((plan) => plan.status === 'done' && plan.plan && !isFailedPlan(plan))
   const needAsk = Boolean(asked.questions.length || plans.some((plan) => plan.supervisor?.missing?.length))
-  // 多数路已写成方案时仍交付；只有写完的路不到一半才整轮停在补充问题。
-  const majority = Math.ceil((plans.length || 1) / 2)
-  if (needAsk && finished.length < majority) {
+  // 只要有一路写成方案就进入评分；追问附在「待确认问题」。只有谁都没写完才整轮停在补充。
+  if (needAsk && finished.length === 0) {
     const questions = asked.questions.length ? asked.questions : questionsFor(query).questions
     return {
       plans,
