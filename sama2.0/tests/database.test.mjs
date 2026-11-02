@@ -41,6 +41,9 @@ test('SQLite引用ID被最新版依据检查识别，伪造ID会被拒绝',()=>{
  const text=searchLibrary('第八章实例30抱轴背景'),id=text.match(/sqlite_curated:\d+/)[0]
  assert.equal(checkGrounding('参考 '+id,text).pass,true)
  assert.equal(checkGrounding('参考 sqlite_curated:99999999',text).pass,false)
+ assert.equal(checkGrounding('参考 sqlite_curated:12','id: sqlite_curated:123').pass,false)
+ assert.equal(checkGrounding('参考 sqlite_fragment:1','id: sqlite_fragment:10').pass,false)
+ assert.equal(checkGrounding('参考 sqlite_curated:123','id: sqlite_curated:123').pass,true)
  assert.match(searchLibrary(id),/C08-30/)
 })
 test('原文片段引用ID支持精确续查，仍受审核限制',()=>{

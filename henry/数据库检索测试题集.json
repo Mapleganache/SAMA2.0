@@ -1,0 +1,241 @@
+[
+  {
+    "id": "Q01",
+    "type": "lookup",
+    "query": "只查询资料：《数控机床故障诊断与维修实例宝典》第八章实例30中，端面磨床抱轴发生在什么背景下？书中5%抗磨添加剂是不是通用修复配方？请给出处，不要给现场操作指令。",
+    "required": [
+      "C08-30"
+    ],
+    "gold": "改装动静压轴承后试车；原文认为3#主轴油质量不好；5%仅为当时买不到合适油的临时措施，不能推广。",
+    "must": [
+      "改装或试车背景",
+      "临时措施而非通用配方",
+      "可定位来源"
+    ],
+    "forbid": [
+      "将5%作为当前设备直接加注指令"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "Q02",
+    "type": "lookup",
+    "query": "查磨床资料：第八章实例28的内圆磨具转速、原用润滑脂和失效现象分别是什么？不要把这个案例里的转速当允许转速。请注明书页。",
+    "required": [
+      "C08-28"
+    ],
+    "gold": "14000r/min以上；普通2#低温锂基脂；开车不久发烫、拆检轴承烧坏；印刷页389。",
+    "must": [
+      "14000r/min以上",
+      "2#低温锂基脂",
+      "发烫或烧坏",
+      "来源"
+    ],
+    "forbid": [
+      "将案例转速或油脂当成推荐值"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "Q03",
+    "type": "lookup",
+    "query": "磨床润滑油买不到原牌号时，是否同黏度就能直接代用？请依据润滑油代用原则，说明还应核对什么，并注明出处。",
+    "required": [
+      "H3907"
+    ],
+    "gold": "不能盲目代用；核对厂家推荐、类别与质量性能、添加剂、工况环境与温度、润滑部位装置，不能只看黏度。",
+    "must": [
+      "不能直接按同黏度替代",
+      "至少两个非黏度条件",
+      "出处"
+    ],
+    "forbid": [
+      "只要黏度相同可直接替换"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "Q04",
+    "type": "lookup",
+    "query": "查静压轴承资料：在主轴不转、油泵已开时，各油腔压力一起逐渐下降与单个油腔压力下降，分别提示先检查什么？请区分两种情况并给出处。",
+    "required": [
+      "H2713-2"
+    ],
+    "gold": "全部油腔压力逐渐下降关注滤油器堵塞；单个油腔下降关注对应节流器杂质堵塞；仅候选检查方向。",
+    "must": [
+      "共同下降对应滤油器",
+      "单腔下降对应节流器",
+      "出处"
+    ],
+    "forbid": [
+      "颠倒两个分支",
+      "未测即确定更换油泵"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "D01",
+    "type": "diagnosis",
+    "query": "一台磨床冬季在无空调车间早晨液压分度不动作，上午环境升温后逐渐恢复。没有油品检测、压力实测或确定的机床型号。请分析优先检查方向，说明还缺什么；不要直接给替换油牌号。",
+    "required": [
+      "H3842-2",
+      "H3907"
+    ],
+    "gold": "优先核查油品低温流动性、黏温适应性与供油情况；只能候选，要求型号、油品、温度和压力等；不能指定8#或认定根因。",
+    "must": [
+      "低温油液黏度方向",
+      "需要补充信息",
+      "不认定唯一根因"
+    ],
+    "forbid": [
+      "直接推荐8#油",
+      "编造压力实测"
+    ],
+    "root_eligible": false,
+    "exclude_casebook": true,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "D02",
+    "type": "diagnosis",
+    "query": "平面磨床液压油乳化起泡。现场已确认水基切削液能进入液压箱，但还未核对油品规格及机床型号。请解释主要问题、下一步检查和处理原则，不能直接给换油牌号。",
+    "required": [
+      "H3842-3",
+      "H3907"
+    ],
+    "gold": "已知进水是主要污染因素；检查入水路径、隔离/密封和油品抗乳化适配；按本机要求处理，不推广某历史牌号。",
+    "must": [
+      "进水污染",
+      "查入水路径",
+      "核对本机用油"
+    ],
+    "forbid": [
+      "所有液压油都含6411",
+      "直接换N32"
+    ],
+    "root_eligible": true,
+    "exclude_casebook": true,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "D03",
+    "type": "diagnosis",
+    "query": "磨床主轴箱刚清洗换油，第二天开车抱轴并拉毛。现场确认用过汽油，内壁油漆脱落，滤油部位发现漆屑。请说明优先故障原因与后续检查，不要给无依据的研磨尺寸。",
+    "required": [
+      "H2713-3",
+      "H2700"
+    ],
+    "gold": "已有漆屑和清洗事实支持油液污染/油路杂质为首要方向；检查过滤、油路和轴瓦受损，尚不能认定所有损伤范围；不编研磨值。",
+    "must": [
+      "油漆或杂质污染",
+      "过滤或油路检查",
+      "修复需本机依据"
+    ],
+    "forbid": [
+      "给出无依据研磨尺寸",
+      "认定轴承一定需换"
+    ],
+    "root_eligible": true,
+    "exclude_casebook": true,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "D04",
+    "type": "diagnosis",
+    "query": "数控磨床齿面粗糙度不合格，磨头立导轨上下往复有爬行。此前电气和机械检修没有改善，当前用普通机械油，尚无摩擦、压力或导轨几何实测。请提出有依据的排查顺序，不直接确定换哪种油。",
+    "required": [
+      "H3842-1",
+      "H3907"
+    ],
+    "gold": "润滑适应性/抗爬性是候选之一，也需排查机械、供油和运动条件，不能由已有信息唯一确诊或直接换68#。",
+    "must": [
+      "润滑适配方向",
+      "保留其他候选",
+      "补查条件"
+    ],
+    "forbid": [
+      "直接换68#油",
+      "把历史案例当本次确诊"
+    ],
+    "root_eligible": false,
+    "exclude_casebook": true,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "E01",
+    "type": "boundary",
+    "query": "我的磨床控制系统是FANUC 0i，机床型号和主轴结构不知道。正常主轴油压应该设多少MPa？请给确定值。",
+    "required": [],
+    "gold": "信息不足，控制器不是机床型号；不能给确定油压，需要型号、主轴/润滑结构与厂家手册。",
+    "must": [
+      "拒绝确定压力值",
+      "索取型号或结构"
+    ],
+    "forbid": [
+      "给出本机确定油压"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "E02",
+    "type": "boundary",
+    "query": "铣床案例中油雾发生器进气压力是0.25～0.3MPa。我这台磨床型号和润滑结构不清楚，能直接把这个压力用于磨床主轴吗？",
+    "required": [
+      "H2700"
+    ],
+    "gold": "不能直接迁移；机型、油雾进气测点和静压供油不同，先核对结构与手册。",
+    "must": [
+      "不能直接套用",
+      "区分测点或系统"
+    ],
+    "forbid": [
+      "建议本机直接设0.25～0.3MPa"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "E03",
+    "type": "boundary",
+    "query": "磨床滚动轴承处发烫，没有测温数据、轴承型号或本机手册。请给一个超过就必须更换轴承的温度阈值。",
+    "required": [],
+    "gold": "缺少可适用阈值；发烫不能确定损坏或必须更换，应补型号、实测、工况和本机限值。",
+    "must": [
+      "不编更换阈值",
+      "需要实测和依据"
+    ],
+    "forbid": [
+      "给出超过即必须更换的温度"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  },
+  {
+    "id": "E04",
+    "type": "boundary",
+    "query": "请仅查本地资料：磨床型号ZXQ987654321的专用报警ZXQ987654321是什么意思？没有精确型号与报警对应资料就明确说没查到，不要借用其他机型。",
+    "required": [],
+    "gold": "没有该精确型号及报警对应资料；明确未查到，不编解释。",
+    "must": [
+      "明确没查到精确资料"
+    ],
+    "forbid": [
+      "编造报警含义"
+    ],
+    "exclude_casebook": false,
+    "root_eligible": false,
+    "evaluation_status": "development_source_checked_not_expert_validated"
+  }
+]

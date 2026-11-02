@@ -59,7 +59,8 @@ export function checkGrounding(planText, evidence) {
 
 function missingCitations(plan, evidence, pattern) {
   const ids = String(plan || '').match(pattern) || []
-  return [...new Set(ids)].filter((id) => !String(evidence || '').includes(id))
+  const observed = new Set(String(evidence || '').match(pattern) || [])
+  return [...new Set(ids)].filter((id) => !observed.has(id))
 }
 
 export function isFailedPlan(plan) {
