@@ -15,7 +15,7 @@
   "scripts": {
     "postinstall": "node scripts/prepare-db.mjs",
     "setup:db": "node scripts/prepare-db.mjs",
-    "test:db": "node --test tests/database.test.mjs tests/database-flow.test.mjs",
+    "test:db": "node --test tests/database.test.mjs tests/database-flow.test.mjs tests/retrieval.test.mjs",
     "test:core": "node test-rules.mjs && node test-gates.mjs && node test-guard-run.mjs && node test-flow.mjs",
     "test": "npm run test:db && npm run test:core",
     "start": "node server.mjs"
