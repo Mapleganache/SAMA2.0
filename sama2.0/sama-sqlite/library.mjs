@@ -4,6 +4,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import {fileURLToPath} from 'node:url'
 import {searchRecords as curatedSearch,formatSearch as formatCurated,closeDatabases as closeCurated} from './curated-library.mjs'
+import {analyzeQuery} from './query-analysis.mjs'
 const ROOT=path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const opened=new Map()
 export function closeDatabases(){for(const d of opened.values())d.close();opened.clear();closeCurated()}
@@ -19,10 +20,13 @@ function dbFor(p){
 }
 const stop=new Set(['数控','磨床','资料','什么','请给','给出','不要','说明','是否','没有','需要','目前','进行','一个','要求','检查','对应','机床','依据','原文','方法','查询'])
 function terms(q){
- const text=q.toLowerCase().replaceAll('粘','黏'),map=new Map()
+ const {positive:text,expansions}=analyzeQuery(q),map=new Map()
  for(const w of text.match(/[\p{Script=Han}]+|[a-z0-9]+(?:[-.#][a-z0-9]+)*/gu)||[]){
   if(/^\p{Script=Han}+$/u.test(w))for(let i=0;i<w.length-1;i++){const t=w.slice(i,i+2);if(!stop.has(t))map.set(t,1)}
   else if(w.length>1)map.set(w,4)
+ }
+ for(const word of expansions)for(let i=0;i<word.length-1;i++){
+  const term=word.slice(i,i+2);if(!stop.has(term)&&!map.has(term))map.set(term,0.6)
  }
  return [...map].slice(0,256)
 }
@@ -90,18 +94,33 @@ export function searchRecords(query,options={}){
  const conditions=['f.reference_allowed=1'],params=weighted.flat()
  if(o.subsystem){conditions.push('EXISTS (SELECT 1 FROM json_each(f.subsystems_json) x WHERE x.value=?)');params.push(o.subsystem)}
  if(exclude.includes('case'))conditions.push("s.path NOT LIKE '%实例宝典%'")
- const sql=`WITH q(term,weight) AS (VALUES ${weighted.map(()=>'(?,?)').join(',')}) SELECT f.id, SUM(q.weight*(3*p.title_tf+p.body_tf)*2.2/(3*p.title_tf+p.body_tf+1.2*(.25+.75*f.token_length/?))) AS score FROM full_postings p JOIN q ON q.term=p.term JOIN full_fragments f ON f.id=p.fragment_id JOIN file_sources s ON s.id=f.file_id WHERE ${conditions.join(' AND ')} GROUP BY f.id ORDER BY score DESC,f.id LIMIT 16`
+ const sql=`WITH q(term,weight) AS (VALUES ${weighted.map(()=>'(?,?)').join(',')}) SELECT f.id, SUM(q.weight*(3*p.title_tf+p.body_tf)*2.2/(3*p.title_tf+p.body_tf+1.2*(.25+.75*f.token_length/?))) AS score FROM full_postings p JOIN q ON q.term=p.term JOIN full_fragments f ON f.id=p.fragment_id JOIN file_sources s ON s.id=f.file_id WHERE ${conditions.join(' AND ')} GROUP BY f.id ORDER BY score DESC,f.id LIMIT 40`
  // avg参数在WHERE参数前。
  const args=[...weighted.flat(),avg,...params.slice(weighted.length*2)]
  const ranked=db.prepare(sql).all(...args)
  const candidates=ranked.map(({id,score})=>({...db.prepare('select f.rowid as citation_row,f.*,s.path,s.title as source_title,s.version_text,b.raw_text,b.clean_text from full_fragments f join file_sources s on s.id=f.file_id join content_blobs b on b.sha256=f.content_sha256 where f.id=?').get(id),score,kind:'source_reference'}))
+ // 同时命中问题核心现象与资料主题的原文优先；不据此放宽任何准入条件。
+ const {positive}=analyzeQuery(q)
+ const focus=/导轨/.test(positive)&&/爬行|爬动|运动不平稳|卡顿/.test(positive)?'guide'
+  :/乳化/.test(positive)&&/油|液压/.test(positive)?'emulsion'
+  :/油雾/.test(positive)&&/压力/.test(positive)?'mist':''
+ if(focus)for(const row of candidates){
+  const text=(row.title+' '+row.clean_text).toLowerCase()
+  const matched=focus==='guide'?/导轨/.test(text)&&/爬行|润滑|摩擦/.test(text)
+   :focus==='emulsion'?/乳化/.test(text)&&/检查|污染|变质|外观|含水/.test(text)
+   :/油雾/.test(text)
+  if(matched)row.score*=1.5
+ }
+ candidates.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id))
  const out=[]
- if(curated.records[0])out.push({kind:'curated',data:curated.records[0]})
- if(curated.records[1]?.reason?.endsWith('prerequisite')&&o.limit>1)out.push({kind:'curated',data:curated.records[1]})
+ // 油雾问题不强塞与油雾无关的试点，给原文检索留出位置。
+ const selectedCurated=focus==='mist'?curated.records.filter(r=>/油雾/.test(r.title+' '+r.summary)):curated.records
+ if(selectedCurated[0])out.push({kind:'curated',data:selectedCurated[0]})
+ if(selectedCurated[1]?.reason?.endsWith('prerequisite')&&o.limit>1)out.push({kind:'curated',data:selectedCurated[1]})
  // 同源同层级最多一段，避免近重复连续占满结果；仅抑制本次返回，数据库记录不删。
  const groups=new Set()
  for(const row of candidates){const key=row.file_id+'|'+row.hierarchy;if(groups.has(key))continue;groups.add(key);out.push(row);if(out.length>=o.limit)break}
- if(!candidates.length)for(const row of curated.records.slice(1))if(out.length<o.limit)out.push({kind:'curated',data:row})
+ if(!candidates.length)for(const row of selectedCurated.slice(1))if(out.length<o.limit)out.push({kind:'curated',data:row})
  return {mode:o.mode,records:out,reason:out.length?'':'全量库没有符合范围的资料；隔离资料不自动加入维修参考。'}
 }
 function render(r,i,db){
@@ -118,6 +137,8 @@ export function searchLibrary(query,options={}){
   const budget=Math.min(3400,Math.max(800,Number(options.budget)||3400))
   const r=searchRecords(query,options);if(!r.records.length)return r.reason
   let text=`SQLite全量资料（${r.mode}，开发参考；未经维修专家复核）。资料中的条件、历史处理和数值均不是本机结论；缺失不得补造。\n`;const skipped=[]
+  if(/油雾/.test(query)&&/压力/.test(query)&&/(?:直接|套用|用于)/.test(query)&&/(?:型号|结构).{0,20}(?:不清|未知|不明|未核)/.test(query))
+   text+='适用性提示：油雾装置的进气压力与本机主轴供油压力不能默认属于同一测点或系统。不能直接套用；请核对本机型号、润滑结构、测点和厂家资料。\n'
   for(const item of r.records){const block=render(item,1+(text.match(/\n\[\d+\]/g)||[]).length)
    if(text.length+block.length+160>budget){skipped.push(item.id||item.data.id);continue}
    text+=(text.endsWith('\n')?'':'\n\n')+block

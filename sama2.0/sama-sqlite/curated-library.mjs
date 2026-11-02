@@ -2,10 +2,10 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
+import { analyzeQuery, normalize } from './query-analysis.mjs'
 const ROOT=path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const SOURCE_OK=['selected_fields_pdf_visual_checked','original_markdown_exact_checked_pdf_pending']
 const STOP=new Set(['数控','磨床','资料','查询','请给','给出','请问','什么','是否','说明','依据','不要','一个','这个','目前','情况','问题','没有','要求','对应','需要'])
-const normalize=s=>String(s||'').toLowerCase().replaceAll('粘','黏')
 const dbs=new Map()
 export function closeDatabases(){for(const db of dbs.values())db.close();dbs.clear()}
 function open(dbPath){
@@ -34,12 +34,17 @@ function eligibility(o){
  return {sql:parts.join(' AND '),params}
 }
 function queryTerms(query,vocabulary){
- const q=normalize(query),terms=new Map()
+ const {positive:q,expansions}=analyzeQuery(query),terms=new Map()
  for(const word of q.match(/[\p{Script=Han}]+|[a-z0-9]+(?:[-.#][a-z0-9]+)*/gu)||[]){
   if(/^\p{Script=Han}+$/u.test(word))for(let i=0;i<word.length-1;i++){const t=word.slice(i,i+2);if(!STOP.has(t))terms.set(t,1)}
   else if(word.length>1)terms.set(word,3)
  }
  for(const {term} of vocabulary)if(q.includes(term))terms.set(term,term==='代用'?12:term.length>=3?5:3)
+ // 扩展词的权重低于直接出现在问题中的同类词。
+ for(const word of expansions){
+  const grams=[word,...Array.from({length:Math.max(0,word.length-1)},(_,i)=>word.slice(i,i+2))]
+  for(const term of grams)if(term.length>=2&&!terms.has(term))terms.set(term,0.9)
+ }
  return [...terms].slice(0,512)
 }
 const JOIN=`SELECT u.rowid AS citation_row,u.*,p.summary,p.structure_requirement,p.search_length,e.locator,e.line_start,e.line_end,e.source_id,s.title AS source_title,s.version AS source_version,s.version_status,s.relative_path,s.pdf_path FROM units u JOIN retrieval_profiles p ON p.unit_id=u.id JOIN evidence e ON e.id=u.evidence_id JOIN sources s ON s.id=e.source_id`
@@ -66,6 +71,14 @@ export function searchRecords(query,options={}){
   const u=lookup.get(r.unit_id),tf=3*r.title_tf+r.body_tf,idf=Math.log(1+(n-df.get(r.term)+0.5)/(df.get(r.term)+0.5))
   const score=idf*(tf*2.2)/(tf+1.2*(0.25+0.75*u.search_length/avg))*weight.get(r.term)
   scores.set(r.unit_id,(scores.get(r.unit_id)||0)+score)
+ }
+ // 问题同时包含工况和润滑主题时，提升标题明确覆盖该主题的资料；不改变准入筛选。
+ const context=analyzeQuery(raw)
+ for(const [id,score] of scores){
+  const title=normalize(lookup.get(id).title)
+  const topical=context.expansions.includes('低温')&&/低温/.test(title)
+   || context.expansions.includes('润滑剂')&&/润滑剂.*选择|选择.*润滑剂/.test(title)
+  if(topical)scores.set(id,score*1.6)
  }
  let ranked=[...scores].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([id,score])=>({...lookup.get(id),score,reason:'bm25'}))
  if(!ranked.length)return {mode:o.mode,records:[],reason:'本地SQLite没有命中，不得编造手册条款或具体参数。'}
