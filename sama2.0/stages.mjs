@@ -8,7 +8,7 @@ import { logEvent } from './log.mjs'
 import { answerSimple } from './mainAgent.mjs'
 import { mapLimit } from './pool.mjs'
 import { buildRoles } from './prompts.mjs'
-import { diversifyLaneQueries, laneSearchHint, laneTemperature, runSqliteTree } from './retrieval-tree.mjs'
+import { buildLaneEntries, laneSearchHint, laneTemperature, runSqliteTree } from './retrieval-tree.mjs'
 import { runReactSub } from './reactLoop.mjs'
 import { buildRubric } from './rubric.mjs'
 import { loadLlmSettings } from './settings.mjs'
@@ -96,22 +96,39 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
   }
   // 用户已经补充过一轮后，不再提供 ask_user，避免反复追问进不了评分。
   const allowAskUser = !(Array.isArray(supplements) && supplements.length)
-  const firstQueries = diversifyLaneQueries(query, count, start)
+  const laneEntries = buildLaneEntries(query, {
+    count,
+    start,
+    seedBase: config.seedBase,
+    temps: config.laneTemps,
+    entryMode: config.treeEntryMode,
+    priorBeta: config.treePriorBeta,
+    mmrLambda: config.treeMmrLambda,
+    retry: config.treeEntryRetry,
+  })
   const roles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser })
-    .map((role, index) => applyLaneSearch(role, firstQueries[index]))
+    .map((role, index) => applyLaneSearch(role, laneEntries[index]?.entryQuery))
     .map((role) => applyBriefToRole(role, brief))
     .map((role) => applyAssumptions(role, assumptions))
   const startedAt = Date.now()
   const deadline = waveDeadline(startedAt, config.subTimeoutMs, count, config.staggerMs)
   return mapLimit(roles, config.concurrency, async (role, index) => {
     if (index > 0) await wait(index * config.staggerMs)
+    const entry = laneEntries[index] || { entryQuery: query, tau: laneTemperature(config, role.index), entryMode: config.treeEntryMode }
+    const tauProp = entry.tau ?? laneTemperature(config, role.index)
     const treeSearch = config.treeEnabled
       ? await runSqliteTree({
           origin: query,
-          firstQuery: firstQueries[index],
-          hops: config.treeHops,
-          topK: config.treeTopK,
+          firstQuery: entry.entryQuery,
+          beamK: config.treeBeamK,
+          topK: config.treeBeamK || config.treeTopK,
           gamma: config.treeGamma,
+          hopCost: config.treeHopCost,
+          alpha: config.treeAlpha,
+          retBudget: config.treeRetBudget,
+          hopFuse: config.treeHopFuse,
+          tauLane: tauProp,
+          entryMode: entry.entryMode || config.treeEntryMode,
         }).catch(() => null)
       : null
     return runReactSub({
@@ -121,8 +138,8 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       maxStep: config.maxStep,
       timeoutMs: config.subTimeoutMs,
       llmTimeoutMs: config.llmTimeoutMs,
-      seed: config.seedBase + role.index,
-      tauProp: laneTemperature(config, role.index),
+      seed: entry.seed ?? (config.seedBase + role.index),
+      tauProp,
       tauFinal: config.tauFinal,
       toolLimit: config.toolLimit,
       obsPrefix: config.obsPrefix,

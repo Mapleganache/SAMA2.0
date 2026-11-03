@@ -42,7 +42,16 @@ export function resolveConfig(options = {}) {
     treeEnabled,
     treeHops: 2,
     treeTopK: 3,
+    treeBeamK: clampBeamK(options.treeBeamK ?? options.treeTopK ?? Number(process.env.SAMA2_TREE_BEAM_K) ?? 3),
     treeGamma: 0.6,
+    treeHopCost: Number.isFinite(Number(options.treeHopCost)) ? Math.max(0, Number(options.treeHopCost)) : 0.15,
+    treeAlpha: clampUnit(options.treeAlpha ?? 0.5),
+    treeRetBudget: clampInt(options.treeRetBudget ?? 12, 2, 64),
+    treeHopFuse: clampInt(options.treeHopFuse ?? 16, 2, 32),
+    treeEntryMode: String(options.treeEntryMode || process.env.SAMA2_TREE_ENTRY || 'softmax').toLowerCase() === 'mmr' ? 'mmr' : 'softmax',
+    treePriorBeta: clampUnit(options.treePriorBeta ?? 0.5),
+    treeMmrLambda: clampUnit(options.treeMmrLambda ?? 0.5),
+    treeEntryRetry: clampInt(options.treeEntryRetry ?? 3, 0, 8),
     thetaB: 6,
     seedBase,
     toolLimit: 4,
@@ -61,4 +70,17 @@ function clampInt(value, min, max) {
   const n = Math.floor(Number(value))
   if (!Number.isFinite(n)) return min
   return Math.max(min, Math.min(max, n))
+}
+
+function clampUnit(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0.5
+  return Math.max(0, Math.min(1, n))
+}
+
+function clampBeamK(value) {
+  const allowed = [3, 5, 7]
+  const n = Number(value)
+  const raw = Number.isFinite(n) && n > 0 ? n : 3
+  return allowed.reduce((best, item) => (Math.abs(item - raw) < Math.abs(best - raw) ? item : best))
 }
