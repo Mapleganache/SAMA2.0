@@ -1,308 +1,701 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <title>SAMA 2.0</title>
-  <style>
-    body { font-family: "Segoe UI", sans-serif; margin: 32px auto; max-width: 960px; color: #1c1c1c; }
-    h1 { font-size: 22px; margin-bottom: 4px; }
-    h2 { font-size: 18px; margin: 0 0 8px; }
-    p { color: #555; }
-    label { display: block; margin: 12px 0 4px; font-size: 13px; }
-    input, textarea { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; }
-    input[type="checkbox"] { width: auto; margin-right: 6px; }
-    textarea { min-height: 96px; }
-    .row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 140px; gap: 12px; }
-    .checks { display: flex; gap: 20px; align-items: center; margin-top: 8px; }
-    .checks label { margin: 0; }
-    button { margin-top: 16px; padding: 8px 16px; font: inherit; }
-    pre { white-space: pre-wrap; background: #f6f6f6; padding: 16px; }
-    .panel { margin-top: 20px; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e8e8e8; font-size: 13px; }
-    .badge.complex { background: #fde7c7; }
-    .badge.simple { background: #d9f2d9; }
-    .card { border: 1px solid #ddd; padding: 12px 14px; margin: 12px 0; }
-    .card.winner { border-color: #2e7d32; }
-    .card.second { border-color: #1565c0; }
-    .meta { color: #555; font-size: 13px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
-    th, td { border: 1px solid #e4e4e4; padding: 4px 6px; text-align: left; font-size: 13px; }
-    a { color: #0b57d0; }
-    ol.flow { padding-left: 18px; }
-    ol.flow li { margin: 10px 0; }
-    .think { margin: 8px 0 12px; padding-left: 10px; border-left: 3px solid #ddd; }
-    .think h3 { font-size: 14px; margin: 0 0 4px; }
-    .think pre { margin: 6px 0; }
-    #pending { margin-top: 16px; padding: 12px 14px; background: #fff7e8; border: 1px solid #f0d7a2; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SAMA 2.0 · 磨床诊断</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --line: #e5e7eb;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --brand: #2f6feb;
+    --brand-soft: #eef3ff;
+    --user: #eef2f7;
+    --warn: #b45309;
+    --warn-bg: #fff7e6;
+    --ok: #15803d;
+    --ok-bg: #ecfdf3;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; width: 100%; max-width: 100%; overflow-x: hidden; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  button, input, textarea, select { font: inherit; color: inherit; }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 20px; min-width: 0;
+    background: rgba(255,255,255,.88);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: .2px; white-space: nowrap; flex: 0 0 auto; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; }
+  .brand .dot.on { background: #22c55e; }
+  .brand small { font-weight: 400; color: var(--muted); }
+  .tabs { display: flex; gap: 4px; flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    border: 0; background: transparent; color: var(--muted);
+    padding: 6px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
+  .tab:hover { background: #f1f3f6; color: var(--text); }
+  .tab.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .top-actions { display: flex; gap: 8px; }
+  .icon-btn {
+    border: 1px solid var(--line); background: #fff; color: var(--muted);
+    width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: grid; place-items: center;
+  }
+  .icon-btn:hover { color: var(--text); border-color: #d6dae0; }
+
+  /* ---------- chat ---------- */
+  main { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .chat { flex: 1; overflow-y: auto; padding: 26px 16px 8px; min-width: 0; }
+  .chat-inner { max-width: 860px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .welcome { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 22px 18px; }
+  .welcome h1 { margin: 0 0 6px; font-size: 20px; }
+  .welcome p { margin: 0 0 14px; color: var(--muted); }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; }
+  .example {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 7px 12px; cursor: pointer; color: #374151; font-size: 13.5px;
+  }
+  .example:hover { border-color: #c7d2fe; background: #f8faff; }
+
+  .msg { display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .msg .bubble {
+    max-width: 92%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  }
+  .msg.user .bubble { background: var(--user); border-color: #e2e8f0; max-width: 80%; }
+  .msg .bubble > :first-child { margin-top: 0; }
+  .msg .bubble > :last-child { margin-bottom: 0; }
+  .msg.error .bubble { border-color: #fecaca; background: #fff5f5; color: #b91c1c; }
+
+  .meta-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px; font-size: 12px;
+    background: #f1f3f6; color: #4b5563; border: 1px solid transparent;
+  }
+  .chip.simple { background: var(--ok-bg); color: var(--ok); }
+  .chip.complex { background: #fff3e0; color: #b45309; }
+  .chip.need { background: var(--brand-soft); color: var(--brand); }
+  .chip.err { background: #fef2f2; color: #b91c1c; }
+  .chip.mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+  .assume {
+    margin: 10px 0 14px; padding: 10px 12px;
+    background: var(--warn-bg); border: 1px solid #fde68a; border-radius: 10px;
+    color: #92400e; font-size: 13.5px;
+  }
+  .assume b { font-weight: 650; }
+  .assume ul { margin: 6px 0 0 18px; padding: 0; }
+
+  .bubble h1, .bubble h2, .bubble h3, .bubble h4 { line-height: 1.35; margin: 1.1em 0 .45em; }
+  .bubble h1 { font-size: 20px; }
+  .bubble h2 { font-size: 17px; }
+  .bubble h3 { font-size: 15.5px; }
+  .bubble h4 { font-size: 14.5px; }
+  .bubble p { margin: .55em 0; }
+  .bubble ul, .bubble ol { margin: .5em 0 .7em 1.35em; padding: 0; }
+  .bubble li { margin: .25em 0; }
+  .bubble blockquote {
+    margin: .7em 0; padding: .2em 0 .2em 12px;
+    border-left: 3px solid #dbe3ef; color: #475467;
+  }
+  .bubble code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 13px; background: #f3f4f6; padding: 1px 5px; border-radius: 5px;
+  }
+  .bubble pre {
+    background: #f6f8fa; border: 1px solid #eceff3; border-radius: 10px;
+    padding: 12px 14px; overflow-x: auto; margin: .7em 0;
+  }
+  .bubble pre code { background: transparent; padding: 0; font-size: 12.8px; line-height: 1.55; white-space: pre-wrap; }
+  .bubble table { border-collapse: collapse; width: 100%; margin: .7em 0; font-size: 13.5px; }
+  .bubble th, .bubble td { border: 1px solid #e6e8ee; padding: 6px 9px; text-align: left; vertical-align: top; }
+  .bubble th { background: #f8fafc; font-weight: 600; }
+  .bubble hr { border: 0; border-top: 1px solid var(--line); margin: 1.1em 0; }
+  .bubble a { color: var(--brand); }
+
+  .questions { margin: 12px 0 2px; padding: 12px 14px; background: #f8faff; border: 1px solid #dbe4ff; border-radius: 10px; }
+  .questions b { color: #1d4ed8; }
+  .questions ol { margin: 6px 0 0 18px; padding: 0; }
+
+  .cites { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .cite {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12px; color: #334155; background: #f1f5f9; border: 1px solid #e2e8f0;
+    padding: 2px 7px; border-radius: 6px;
+  }
+
+  details.block { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fcfcfd; }
+  details.block > summary {
+    cursor: pointer; padding: 9px 12px; color: #374151; font-size: 13.5px; font-weight: 550;
+    list-style: none;
+  }
+  details.block > summary::-webkit-details-marker { display: none; }
+  details.block > summary::before { content: "▸ "; color: #9aa4b2; }
+  details.block[open] > summary::before { content: "▾ "; }
+  details.block .body { padding: 4px 14px 14px; border-top: 1px solid var(--line); }
+
+  .plan-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: #fff; }
+  .plan-card.win { border-color: #86efac; box-shadow: 0 0 0 3px #f0fdf4 inset; }
+  .plan-card h3 { margin: 0 0 6px; font-size: 15px; }
+  .plan-card .plan-text { white-space: pre-wrap; font-size: 13.5px; color: #374151; margin-top: 8px; }
+  .score-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .score-table th, .score-table td { border: 1px solid #e6e8ee; padding: 4px 6px; text-align: left; }
+  .score-table th { background: #f8fafc; font-weight: 600; }
+  .muted { color: var(--muted); font-size: 13px; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .18s; }
+  .typing i:nth-child(3) { animation-delay: .36s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+  /* ---------- composer ---------- */
+  .composer-wrap { position: sticky; bottom: 0; background: linear-gradient(to top, var(--bg) 72%, rgba(247,248,250,0)); padding: 12px 16px 18px; min-width: 0; }
+  .composer { max-width: 860px; width: 100%; margin: 0 auto; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 20px rgba(16,24,40,.06); padding: 10px 10px 8px 14px; }
+  .composer:focus-within { border-color: #b9cdfb; box-shadow: 0 6px 22px rgba(47,111,235,.12); }
+  .hint { max-width: 860px; margin: 0 auto 8px; padding: 8px 12px; border-radius: 10px; font-size: 13px; background: var(--brand-soft); color: #1d4ed8; border: 1px solid #dbe4ff; }
+  .composer-row { display: flex; gap: 8px; align-items: flex-end; }
+  #question {
+    flex: 1; border: 0; outline: 0; resize: none; background: transparent;
+    min-height: 28px; max-height: 200px; padding: 4px 0; line-height: 1.6;
+  }
+  #send {
+    border: 0; background: var(--brand); color: #fff; border-radius: 11px;
+    width: 44px; height: 38px; cursor: pointer; display: grid; place-items: center;
+  }
+  #send:disabled { opacity: .45; cursor: default; }
+  .composer-foot { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px 0; color: var(--muted); font-size: 12px; }
+
+  /* ---------- placeholder views ---------- */
+  .placeholder { max-width: 860px; margin: 40px auto; padding: 0 16px; }
+  .placeholder .card { background: var(--panel); border: 1px dashed #cfd6e4; border-radius: var(--radius); padding: 28px; text-align: center; }
+  .placeholder h2 { margin: 0 0 8px; font-size: 18px; }
+  .placeholder p { margin: 0 auto; max-width: 460px; color: var(--muted); }
+  .placeholder .soon { display: inline-block; margin-top: 14px; padding: 4px 10px; border-radius: 999px; background: #f1f3f6; color: #4b5563; font-size: 12.5px; }
+
+  /* ---------- settings dialog ---------- */
+  dialog { border: 0; border-radius: 16px; padding: 0; width: min(640px, calc(100vw - 32px)); box-shadow: 0 24px 60px rgba(16,24,40,.22); }
+  dialog::backdrop { background: rgba(15,23,42,.35); backdrop-filter: blur(2px); }
+  .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .dlg-head h2 { margin: 0; font-size: 16px; }
+  .dlg-body { padding: 16px 20px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 12.5px; color: var(--muted); }
+  .field input[type="text"], .field input[type="password"], .field input[type="number"] {
+    border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: #fff;
+  }
+  .field input:focus { outline: 2px solid #dbe7ff; border-color: #b9cdfb; }
+  .checks { display: flex; gap: 18px; flex-wrap: wrap; }
+  .checks label { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 13.5px; }
+  .dlg-foot { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+  .link { color: var(--brand); text-decoration: none; font-size: 13px; }
+  .primary { border: 0; background: var(--brand); color: #fff; border-radius: 9px; padding: 8px 16px; cursor: pointer; }
+  .ghost { border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 7px 14px; cursor: pointer; color: #374151; }
+
+  @media (max-width: 720px) {
+    .topbar { padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+    .brand { font-size: 14px; flex: 1 1 auto; }
+    .brand small { display: none; }
+    .tab { padding: 5px 8px; font-size: 13.5px; }
+    .tabs { order: 3; flex: 1 0 100%; gap: 2px; margin-top: 2px; }
+    .top-actions { gap: 6px; }
+    .chat { padding: 16px 10px 6px; }
+    .msg .bubble { max-width: 100%; }
+    .msg.user .bubble { max-width: 92%; }
+    .dlg-body { grid-template-columns: 1fr; }
+  }
+</style>
 </head>
 <body>
-  <h1>SAMA 2.0 磨床维修</h1>
-  <p>缺型号或工况时先提问。信息齐了以后，简单问题直接回答；复杂故障采样多路，交付综合分第一名和第二名及评分，由你选择。 <a href="/report">架构报告</a></p>
-  <label>API Key</label>
-  <input id="apiKey" type="password" placeholder="只保存在这台浏览器里" />
-  <div class="row">
-    <div>
-      <label>接口地址</label>
-      <input id="baseUrl" value="https://api.deepseek.com" />
+  <header class="topbar">
+    <div class="brand"><span class="dot" id="keyDot"></span>SAMA 2.0 <small>磨床诊断</small></div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-view="diagnose">诊断</button>
+      <button class="tab" data-view="gcode">G 代码</button>
+      <button class="tab" data-view="machine">磨床结构</button>
+      <button class="tab" data-view="circuit">电路图</button>
+    </nav>
+    <div class="top-actions">
+      <button class="icon-btn" id="clearBtn" title="清空对话">⌫</button>
+      <button class="icon-btn" id="settingsBtn" title="设置">⚙</button>
     </div>
-    <div>
-      <label>生成模型</label>
-      <input id="model" value="deepseek-chat" />
+  </header>
+
+  <main id="view-diagnose">
+    <div class="chat" id="chat">
+      <div class="chat-inner" id="chatInner">
+        <section class="welcome" id="welcome">
+          <h1>磨床故障诊断</h1>
+          <p>描述现象和工况，系统会先判断信息是否齐全；复杂故障并行五路求解，引用核对后给出方案与评分。缺条件时会先追问。</p>
+          <div class="examples">
+            <button class="example" data-q="高桥外圆磨床，磨削中，热机，主轴发热并且振动，空载时也有轻微异响">主轴发热伴振动</button>
+            <button class="example" data-q="外圆磨床，磨削细长工件，热机，死顶尖处中心孔咬毛、顶尖烧伤">中心孔咬毛</button>
+            <button class="example" data-q="数控磨床，磨削中，热机，加工齿轮时齿面粗糙度始终达不到工艺要求">齿面粗糙度超差</button>
+          </div>
+        </section>
+      </div>
     </div>
-    <div>
-      <label>评判模型（可空，空则同生成）</label>
-      <input id="judgeModel" placeholder="例如 deepseek-chat 或其它模型名" />
+
+    <div class="composer-wrap">
+      <div class="hint" id="hint" hidden></div>
+      <div class="composer">
+        <div class="composer-row">
+          <textarea id="question" rows="1" placeholder="描述故障现象，例如：高桥外圆磨主轴发热并且振动，空载，刚开机"></textarea>
+          <button id="send" title="发送（Enter）" aria-label="发送">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          </button>
+        </div>
+        <div class="composer-foot">
+          <span id="footState">Enter 发送 · Shift+Enter 换行</span>
+          <span id="modelState"></span>
+        </div>
+      </div>
     </div>
-    <div>
-      <label>每路最多轮次</label>
-      <input id="maxStep" type="number" min="1" max="50" value="8" />
+  </main>
+
+  <main id="view-placeholder" hidden>
+    <div class="placeholder">
+      <div class="card">
+        <h2 id="phTitle">功能规划中</h2>
+        <p id="phDesc"></p>
+        <span class="soon">即将上线</span>
+      </div>
     </div>
-  </div>
-  <div class="checks">
-    <label><input id="force" type="checkbox" /> 强制走五路方案</label>
-    <label><input id="author" type="checkbox" /> 作者开关（流程、思考、准确性）</label>
-    <label><input id="web" type="checkbox" /> 允许网页搜索</label>
-  </div>
-  <div id="pending" hidden></div>
-  <label id="questionLabel">故障描述</label>
-  <textarea id="question" placeholder="例如：高桥外圆磨主轴发热并且振动，空载，刚开机"></textarea>
-  <button id="send" type="button">开始诊断</button>
-  <section id="choices" class="panel" hidden></section>
-  <pre id="out">结果会显示在这里。</pre>
-  <section id="authorPanel" class="panel" hidden></section>
-  <script>
-    const fields = ['apiKey', 'baseUrl', 'model', 'judgeModel', 'maxStep']
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog" id="settingsForm">
+      <div class="dlg-head">
+        <h2>设置</h2>
+        <button class="icon-btn" type="button" id="closeSettings" title="关闭">✕</button>
+      </div>
+      <div class="dlg-body">
+        <div class="field full">
+          <label for="apiKey">API Key（只保存在这台浏览器）</label>
+          <input id="apiKey" type="password" autocomplete="off" placeholder="sk-..." />
+        </div>
+        <div class="field">
+          <label for="baseUrl">接口地址</label>
+          <input id="baseUrl" type="text" value="https://api.deepseek.com" />
+        </div>
+        <div class="field">
+          <label for="model">生成模型</label>
+          <input id="model" type="text" value="deepseek-chat" />
+        </div>
+        <div class="field">
+          <label for="judgeModel">评判模型（空则同生成）</label>
+          <input id="judgeModel" type="text" placeholder="例如 deepseek-chat" />
+        </div>
+        <div class="field">
+          <label for="maxStep">每路最多轮次</label>
+          <input id="maxStep" type="number" min="1" max="50" value="8" />
+        </div>
+        <div class="field full checks">
+          <label><input id="force" type="checkbox" /> 强制走五路方案</label>
+          <label><input id="web" type="checkbox" /> 允许网页搜索</label>
+          <label><input id="author" type="checkbox" /> 显示作者视图（流程 / 思考 / 审计）</label>
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <a class="link" href="/report" target="_blank" rel="noopener">架构报告 ↗</a>
+        <div style="display:flex;gap:8px">
+          <button class="ghost" type="button" id="resetSettings">恢复默认</button>
+          <button class="primary" type="button" id="saveSettings">保存</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const fields = ['apiKey', 'baseUrl', 'model', 'judgeModel', 'maxStep'];
+  const DEFAULTS = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', judgeModel: '', maxStep: '8' };
+  const routeText = { simple: '简单问题', complex: '复杂故障', need_info: '需要补充', no_plan: '无可交付方案' };
+
+  const chatInner = $('chatInner');
+  const chatBox = $('chat');
+  const input = $('question');
+  const sendBtn = $('send');
+  const hint = $('hint');
+  const welcome = $('welcome');
+  let session = null;
+  let busy = false;
+  let currentView = 'diagnose';
+
+  /* ---------------- settings ---------------- */
+  function loadSettings() {
     for (const id of fields) {
-      const saved = localStorage.getItem('sama2-' + id)
-      if (saved) document.getElementById(id).value = saved
+      const saved = localStorage.getItem('sama2-' + id);
+      if (saved !== null) $(id).value = saved;
+      else if (DEFAULTS[id] !== undefined) $(id).value = DEFAULTS[id];
     }
-    const authorBox = document.getElementById('author')
-    authorBox.checked = localStorage.getItem('sama2-author') === '1'
-    authorBox.onchange = () => {
-      localStorage.setItem('sama2-author', authorBox.checked ? '1' : '0')
-      renderAuthor(window.__samaLast)
-    }
-    const webBox = document.getElementById('web')
-    webBox.checked = localStorage.getItem('sama2-web') === '1'
-    webBox.onchange = () => localStorage.setItem('sama2-web', webBox.checked ? '1' : '0')
-    let session = null
-    let lastData = null
-    window.__samaLast = null
+    $('force').checked = localStorage.getItem('sama2-force') === '1';
+    $('web').checked = localStorage.getItem('sama2-web') === '1';
+    $('author').checked = localStorage.getItem('sama2-author') === '1';
+    refreshStatus();
+  }
+  function saveSettings() {
+    for (const id of fields) localStorage.setItem('sama2-' + id, $(id).value);
+    localStorage.setItem('sama2-force', $('force').checked ? '1' : '0');
+    localStorage.setItem('sama2-web', $('web').checked ? '1' : '0');
+    localStorage.setItem('sama2-author', $('author').checked ? '1' : '0');
+    refreshStatus();
+  }
+  function refreshStatus() {
+    const key = localStorage.getItem('sama2-apiKey') || $('apiKey').value;
+    $('keyDot').classList.toggle('on', Boolean(key));
+    $('modelState').textContent = ($('model').value || 'deepseek-chat') + ($('author').checked ? ' · 作者视图' : '');
+  }
+  function openSettings() {
+    loadSettings();
+    $('settings').showModal();
+  }
+  $('settingsBtn').onclick = openSettings;
+  $('closeSettings').onclick = () => $('settings').close();
+  $('saveSettings').onclick = () => { saveSettings(); $('settings').close(); };
+  $('resetSettings').onclick = () => {
+    for (const id of fields) localStorage.removeItem('sama2-' + id);
+    loadSettings();
+  };
+  for (const id of fields) $(id).addEventListener('input', () => { if (id !== 'apiKey') refreshStatus(); });
+  $('author').addEventListener('change', refreshStatus);
 
-    document.getElementById('send').onclick = async () => {
-      const out = document.getElementById('out')
-      const button = document.getElementById('send')
-      const payload = {
-        apiKey: document.getElementById('apiKey').value,
-        baseUrl: document.getElementById('baseUrl').value,
-        model: document.getElementById('model').value,
-        judgeModel: document.getElementById('judgeModel').value,
-        maxStep: Number(document.getElementById('maxStep').value) || 8,
-        forceMultiAgent: document.getElementById('force').checked,
-        allowWeb: webBox.checked,
-        userText: document.getElementById('question').value,
-        session,
+  /* ---------------- tabs ---------------- */
+  const PLACEHOLDER = {
+    gcode: ['G 代码', '上传 .nc / .gcode 文件，解析刀具轨迹、坐标与进给；后续在这里做可视化与冲突检查。'],
+    machine: ['磨床结构', '按机型展示砂轮架、头架、尾座、导轨等部件结构与测点，计划接入结构图和备件信息。'],
+    circuit: ['电路图', '上传电气图纸 / PDF，按元件编号定位；后续与 LAD、急停回路和报警点做对照。']
+  };
+  function switchView(view) {
+    currentView = view;
+    for (const tab of document.querySelectorAll('.tab')) tab.classList.toggle('active', tab.dataset.view === view);
+    const isDiag = view === 'diagnose';
+    $('view-diagnose').hidden = !isDiag;
+    $('view-placeholder').hidden = isDiag;
+    if (!isDiag) {
+      const row = PLACEHOLDER[view] || ['功能规划中', '这个模块还没有实现。'];
+      $('phTitle').textContent = row[0];
+      $('phDesc').textContent = row[1];
+    }
+  }
+  for (const tab of document.querySelectorAll('.tab')) tab.onclick = () => switchView(tab.dataset.view);
+
+  /* ---------------- markdown ---------------- */
+  function esc(value) {
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function inline(text) {
+    return esc(text)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  function md(src) {
+    const lines = String(src ?? '').replace(/\r\n/g, '\n').split('\n');
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^```/.test(line)) {
+        const body = [];
+        i += 1;
+        while (i < lines.length && !/^```/.test(lines[i])) { body.push(lines[i]); i += 1; }
+        i += 1;
+        out.push('<pre><code>' + esc(body.join('\n')) + '</code></pre>');
+        continue;
       }
-      for (const id of fields) localStorage.setItem('sama2-' + id, document.getElementById(id).value)
-      button.disabled = true
-      out.textContent = '正在诊断…复杂故障会并行请求多次，请稍等。'
-      document.getElementById('authorPanel').hidden = true
-      document.getElementById('choices').hidden = true
-      document.getElementById('choices').innerHTML = ''
-      try {
-        const response = await fetch('/api/ask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        const data = await response.json()
-        lastData = data
-        window.__samaLast = data
-        if (data.ok && data.route === 'need_info') session = data.session
-        else if (data.ok) session = null
-        out.textContent = data.ok ? data.answer : (data.error || '诊断失败')
-        showPending(data)
-        renderChoices(data)
-        renderAuthor(data)
-      } catch (error) {
-        out.textContent = error.message || String(error)
-        renderChoices(null)
-      } finally {
-        button.disabled = false
+      if (!line.trim()) { i += 1; continue; }
+      const heading = line.match(/^(#{1,4})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length;
+        out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+        i += 1;
+        continue;
       }
-    }
-
-    function showPending(data) {
-      const box = document.getElementById('pending')
-      const label = document.getElementById('questionLabel')
-      const input = document.getElementById('question')
-      if (!data?.ok || data.route !== 'need_info') {
-        box.hidden = true
-        box.innerHTML = ''
-        label.textContent = '故障描述'
-        input.placeholder = '例如：高桥外圆磨主轴发热并且振动，空载，刚开机'
-        return
+      if (/^\|/.test(line)) {
+        const rows = [];
+        while (i < lines.length && /^\|/.test(lines[i])) { rows.push(lines[i]); i += 1; }
+        const cells = rows
+          .filter((row) => !/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(row.trim()))
+          .map((row) => row.replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => inline(cell.trim())));
+        if (cells.length) {
+          const head = cells[0];
+          const body = cells.slice(1);
+          out.push('<table><thead><tr>' + head.map((c) => `<th>${c}</th>`).join('') + '</tr></thead><tbody>' +
+            body.map((row) => '<tr>' + row.map((c) => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody></table>');
+        }
+        continue;
       }
-      const lines = (data.questions || []).map((item) => `<li>${esc(item.text)}</li>`).join('')
-      box.hidden = false
-      box.innerHTML = `<strong>先补充这几项，补完再诊断。原问题会保留。</strong><ul>${lines}</ul>`
-      label.textContent = '补充回答'
-      input.placeholder = '只写补充，例如：刚开机的冷机，现象出现在空载'
-      input.value = ''
-      input.focus()
-    }
-
-    function renderChoices(data) {
-      const box = document.getElementById('choices')
-      const ranked = data?.ok && (data.route === 'complex' || data.route === 'no_plan') ? (data.judge?.ranked || []) : []
-      const tops = ranked.slice(0, 2)
-      if (!tops.length) {
-        box.hidden = true
-        box.innerHTML = ''
-        return
+      if (/^>\s?/.test(line)) {
+        const body = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) { body.push(lines[i].replace(/^>\s?/, '')); i += 1; }
+        out.push('<blockquote>' + body.map(inline).join('<br>') + '</blockquote>');
+        continue;
       }
-      const plans = new Map((data.plans || []).map((plan) => [plan.id, plan]))
-      const dims = [
-        ['accuracy', '准确性'],
-        ['safety', '安全'],
-        ['feasibility', '可行'],
-        ['completeness', '完整'],
-        ['brevity', '简洁'],
-      ]
-      box.hidden = false
-      box.innerHTML = `<h2>请选择一份方案</h2>
-        <p class="meta">系统按综合分排出前两名，评分只作参考，最终由你决定用哪一份。</p>
-        ${tops.map((row, index) => {
-          const plan = plans.get(row.id)
-          const place = index === 0 ? '第一名 · 推荐' : '第二名'
-          const cls = index === 0 ? 'winner' : 'second'
-          const cells = dims.map((dim) => `<th>${dim[1]}</th>`).join('') + '<th>加权</th>'
-          const values = dims.map((dim) => `<td>${esc(row.scores?.[dim[0]])}</td>`).join('') + `<td>${esc(row.total)}</td>`
-          const layers = row.layers
-            ? `<p class="meta">分层：机理 ${esc(row.layers.mechanism)}/10；措施 ${esc(row.layers.measure)}/10；不确定性 ${esc(row.layers.uncertainty)}/10</p>`
-            : ''
-          return `<article class="card ${cls}">
-            <h2>${esc(place)} · ${esc(row.title)}</h2>
-            <table><tr>${cells}</tr><tr>${values}</tr></table>
-            ${layers}
-            <pre>${esc(plan?.plan || '')}</pre>
-          </article>`
-        }).join('')}`
-    }
-
-    function renderAuthor(data) {
-      const panel = document.getElementById('authorPanel')
-      if (!authorBox.checked || !data || !data.ok) {
-        panel.hidden = true
-        panel.innerHTML = ''
-        return
+      if (/^[-*]\s+/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s+/, '')); i += 1; }
+        out.push('<ul>' + items.map((item) => `<li>${inline(item)}</li>`).join('') + '</ul>');
+        continue;
       }
-      const complexity = data.complexity || {}
-      const complex = complexity.level === 'complex' || complexity.level === 'boundary' || data.route === 'complex'
-      const needInfo = data.route === 'need_info'
-      const badge = needInfo ? '需要补充' : complex ? '复杂问题' : '简单问题'
-      const facts = data.facts || {}
-      const scores = new Map((data.judge?.ranked || []).map((row) => [row.id, row]))
-      const accuracyRows = new Map((data.accuracy?.ranked || []).map((row) => [row.id, row]))
-      const accuracy = data.accuracy
-      const accuracyBlock = renderAccuracy(accuracy, complex, needInfo)
-      const paths = (data.plans || []).length
-        ? data.plans.map((plan) => renderPlan(plan, scores.get(plan.id), accuracyRows.get(plan.id), data.judge?.winnerId, data.judge?.runnerUpId)).join('')
-        : needInfo
-          ? '<p>还没有开始写方案。补全上面的问题之后才会采样。</p>'
-          : '<p>这是简单问题，没有启动五路方案，也不做准确性专评。</p>'
-      panel.hidden = false
-      panel.innerHTML = `
-        <h2>作者视图</h2>
-        <p><span class="badge ${needInfo ? '' : complex ? 'complex' : 'simple'}">${badge}</span></p>
-        <p>判断来源：${esc(sourceLabel(complexity.source))}</p>
-        <p>判断理由：${esc(complexity.reason || '无')}</p>
-        <p>现象：${esc((facts.phenomena || []).join('、') || '未提取')}</p>
-        <p>设备：${esc(facts.machine || '未识别')}</p>
-        <p>约束：${esc((facts.constraints || []).join('；') || '无')}</p>
-        ${renderFlow(data.flow)}
-        ${renderThoughts(data.plans, needInfo)}
-        ${accuracyBlock}
-        <h2>${needInfo && !(data.plans || []).length ? '方案' : '各路结果'}</h2>
-        ${paths}
-      `
-    }
-
-    function renderPlan(plan, score, accuracy, winnerId, runnerUpId) {
-      const dims = [
-        ['accuracy', '准确性'],
-        ['safety', '安全'],
-        ['feasibility', '可行'],
-        ['completeness', '完整'],
-        ['brevity', '简洁'],
-      ]
-      const trace = (plan.trace || []).map((step) => `第${step.step}步 ${step.tool || (step.final ? '给出方案' : '收束')}`).join(' → ')
-      const scoreLine = score
-        ? `<table><tr>${dims.map((dim) => `<th>${dim[1]}</th>`).join('')}<th>加权</th></tr><tr>${dims.map((dim) => `<td>${esc(score.scores?.[dim[0]])}</td>`).join('')}<td>${esc(score.total)}</td></tr></table><p class="meta">${esc(score.defect || '')}</p>`
-        : '<p class="meta">这一路没有进入加权评分。</p>'
-      const accuracyLine = accuracy
-        ? `<p class="meta">准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。${esc(accuracy.reason || '')}</p>`
-        : ''
-      const place = plan.id === winnerId ? ' · 第一名' : plan.id === runnerUpId ? ' · 第二名' : ''
-      return `<article class="card ${plan.id === winnerId ? 'winner' : plan.id === runnerUpId ? 'second' : ''}">
-        <h2>${esc(plan.title)}${place}</h2>
-        <p class="meta">${esc(plan.id)} · ${esc(plan.status)} · ${esc(plan.stepCount)} 轮${plan.stopReason ? ' · ' + esc(plan.stopReason) : ''}${trace ? ' · ' + esc(trace) : ''}</p>
-        ${scoreLine}
-        ${accuracyLine}
-        <pre>${esc(plan.plan || plan.error || '')}</pre>
-      </article>`
-    }
-
-    function renderFlow(flow) {
-      const items = (flow || []).map((step, index) => `<li>
-        <strong>${index + 1}. ${esc(step.stage)} · ${esc(step.title)}</strong>
-        <div>${esc(step.detail || '')}</div>
-        ${step.next ? `<div class="meta">走向：${esc(step.next)}</div>` : ''}
-        ${(step.steps || []).map((item) => `<div class="think"><h3>${esc(item.tool)}</h3><pre>${esc(item.observation || '')}</pre></div>`).join('')}
-      </li>`).join('')
-      return `<h2>流程走向</h2><ol class="flow">${items || '<li>没有流程记录。请重新诊断一次。</li>'}</ol>`
-    }
-
-    function renderThoughts(plans, needInfo) {
-      if (!plans?.length) {
-        const text = needInfo
-          ? '这一轮停在补充问题，还没有模型思考，也没有调用工具。'
-          : '简单问题没有多轮思考。Main 先检索，再一次写完答复。检索内容写在上面的流程里。'
-        return `<h2>思考过程</h2><p>${text}</p>`
+      if (/^\d+\.\s+/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^\d+\.\s+/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s+/, '')); i += 1; }
+        out.push('<ol>' + items.map((item) => `<li>${inline(item)}</li>`).join('') + '</ol>');
+        continue;
       }
-      const blocks = plans.map((plan) => {
-        const steps = (plan.trace || []).map((step) => `<div class="think">
-          <h3>第${esc(step.step)}步${step.tool ? ' · 调用 ' + esc(step.tool) : ' · 收束'}</h3>
-          <p><strong>思考：</strong>${esc(step.thought || '模型没有单独写下思考。')}</p>
-          ${step.args && Object.keys(step.args).length ? `<p class="meta">参数：${esc(JSON.stringify(step.args))}</p>` : ''}
-          ${step.observation ? `<p><strong>观察：</strong></p><pre>${esc(step.observation)}</pre>` : ''}
-        </div>`).join('')
-        return `<h3>${esc(plan.title)}</h3>${steps || '<p>这一路没有留下思考记录。</p>'}`
-      }).join('')
-      return `<h2>思考过程</h2>${blocks}`
+      if (/^---+$/.test(line.trim())) { out.push('<hr>'); i += 1; continue; }
+      const para = [];
+      while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\||>|[-*]\s|\d+\.\s|---+$)/.test(lines[i])) {
+        para.push(lines[i]); i += 1;
+      }
+      out.push('<p>' + para.map(inline).join('<br>') + '</p>');
     }
+    return out.join('\n');
+  }
 
-    function renderAccuracy(accuracy, complex, needInfo) {
-      if (needInfo && !accuracy) return '<h2>准确性</h2><p>还在等补充，没有进入评分。</p>'
-      if (!complex) return '<h2>准确性</h2><p>简单问题不进入准确性专评。</p>'
-      if (accuracy?.accuracy == null) return `<h2>准确性</h2><p>${esc(accuracy?.note || '审计未完成。选定方案不变。')}</p>`
-      return `<h2>准确性</h2>
-        <p>只审计第一名 ${esc(accuracy.title || '')}：准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
-        <p>${esc(accuracy.reason || '')}</p>`
-    }
+  /* ---------------- chat rendering ---------------- */
+  function scrollBottom() {
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+  function addUser(text) {
+    welcome.hidden = true;
+    const el = document.createElement('div');
+    el.className = 'msg user';
+    el.innerHTML = '<div class="bubble">' + inline(esc(text)).replace(/\n/g, '<br>') + '</div>';
+    chatInner.appendChild(el);
+    scrollBottom();
+  }
+  function addError(text) {
+    const el = document.createElement('div');
+    el.className = 'msg error';
+    el.innerHTML = '<div class="bubble">' + esc(text) + '</div>';
+    chatInner.appendChild(el);
+    scrollBottom();
+  }
+  function addLoading() {
+    const el = document.createElement('div');
+    el.className = 'msg';
+    el.innerHTML = '<div class="bubble"><span class="typing">正在诊断<i></i><i></i><i></i></span><div class="muted" id="loadingHint" style="margin-top:6px">复杂故障会并行五路，通常需要 30–90 秒</div></div>';
+    chatInner.appendChild(el);
+    scrollBottom();
+    return el;
+  }
 
-    function sourceLabel(source) {
-      if (source === 'hard') return '硬规则'
-      if (source === 'llm') return '分类模型'
-      if (source === 'force') return '强制五路'
-      if (source === 'fallback') return '分类失败，按复杂问题处理'
-      return source || '未知'
-    }
+  function routeChip(data) {
+    const route = data.route || 'unknown';
+    const cls = route === 'simple' ? 'simple' : route === 'need_info' ? 'need' : route === 'no_plan' ? 'err' : 'complex';
+    return `<span class="chip ${cls}">${esc(routeText[route] || route)}</span>`;
+  }
 
-    function esc(value) {
-      return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  function addBot(data) {
+    welcome.hidden = true;
+    const el = document.createElement('div');
+    el.className = 'msg';
+    const meta = data.meta || {};
+    const chips = [routeChip(data)];
+    if (meta.elapsedMs) chips.push(`<span class="chip">${(meta.elapsedMs / 1000).toFixed(1)} s</span>`);
+    if (meta.model) chips.push(`<span class="chip mono">${esc(meta.model)}</span>`);
+    if (data.accuracy?.accuracy != null) chips.push(`<span class="chip">准确性 ${esc(data.accuracy.accuracy)}/10</span>`);
+
+    const assumptions = Array.isArray(data.assumptions) && data.assumptions.length
+      ? `<div class="assume"><b>按假设作答</b><ul>${data.assumptions.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>`
+      : '';
+
+    const pending = data.route === 'need_info' && (data.questions || []).length
+      ? `<div class="questions"><b>先补充这些信息</b><ol>${data.questions.map((q) => `<li>${esc(q.text || q)}</li>`).join('')}</ol></div>`
+      : '';
+
+    const cites = [...new Set((data.answer || '').match(/sqlite_(?:curated|fragment|case):\d+/g) || [])];
+    const citeRow = cites.length
+      ? `<div class="cites">${cites.map((id) => `<span class="cite">${esc(id)}</span>`).join('')}</div>`
+      : '';
+
+    let html = `<div class="bubble"><div class="meta-row">${chips.join('')}</div>${assumptions}${md(data.answer || '')}${pending}${citeRow}`;
+    html += candidateDetails(data);
+    html += authorDetails(data);
+    if (data.rubric?.checklist) html += detailsBlock('评分检查表', '<div class="muted">' + inline(esc(data.rubric.checklist)).replace(/\n/g, '<br>') + '</div>');
+    html += '</div>';
+    el.innerHTML = html;
+    chatInner.appendChild(el);
+    scrollBottom();
+  }
+
+  function candidateDetails(data) {
+    const ranked = data.judge?.ranked || [];
+    if (!ranked.length) return '';
+    const plans = new Map((data.plans || []).map((p) => [p.id, p]));
+    const dims = [['accuracy', '准确性'], ['safety', '安全'], ['feasibility', '可行'], ['completeness', '完整'], ['brevity', '简洁']];
+    const rows = ranked.map((row) => {
+      const cells = dims.map((d) => `<td>${esc(row.scores?.[d[0]] ?? '-')}</td>`).join('');
+      return `<tr><td>${esc(row.title || row.id)}</td>${cells}<td>${esc(row.total)}</td></tr>`;
+    }).join('');
+    const cards = ranked.slice(0, 2).map((row, index) => {
+      const plan = plans.get(row.id);
+      return `<div class="plan-card ${index === 0 ? 'win' : ''}">
+        <h3>${index === 0 ? '推荐' : '备选'} · ${esc(row.title || row.id)}（${esc(row.total)} / 10）</h3>
+        <div class="plan-text">${esc(plan?.plan || '（没有成稿）')}</div>
+      </div>`;
+    }).join('');
+    const body = `<div class="muted" style="margin-bottom:6px">系统按综合分排序，评分只作参考，最终由你决定。</div>
+      <div class="plan-cards">${cards}</div>
+      <table class="score-table" style="margin-top:10px"><thead><tr><th>方案</th>${dims.map((d) => `<th>${d[1]}</th>`).join('')}<th>加权</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return detailsBlock(`候选方案与评分（${ranked.length} 路）`, body);
+  }
+
+  function authorDetails(data) {
+    if (!localStorage.getItem('sama2-author') || localStorage.getItem('sama2-author') !== '1') return '';
+    const facts = data.facts || {};
+    const complexity = data.complexity || {};
+    const flow = (data.flow || []).map((step, index) => `<li><b>${index + 1}. ${esc(step.stage)} · ${esc(step.title)}</b><div class="muted">${esc(step.detail || '')}</div></li>`).join('');
+    const plans = (data.plans || []).map((plan) => {
+      const trace = (plan.trace || []).map((s) => `<div class="muted">第${esc(s.step)}步 ${esc(s.tool || '收束')}${s.observation ? '：<span style="white-space:pre-wrap">' + esc(String(s.observation).slice(0, 400)) + '</span>' : ''}</div>`).join('');
+      return `<div class="plan-card"><h3>${esc(plan.title)} <span class="muted">${esc(plan.status)} · ${esc(plan.stepCount)} 轮</span></h3>${trace}</div>`;
+    }).join('');
+    const body = `<p class="muted">判断：${esc(complexity.reason || '无')}（${esc(complexity.source || '')}）</p>
+      <p class="muted">设备：${esc(facts.machine || '未识别')}；现象：${esc((facts.phenomena || []).join('、') || '未提取')}</p>
+      ${flow ? `<h4>流程</h4><ol>${flow}</ol>` : ''}
+      ${plans ? `<h4>各路过程</h4>${plans}` : ''}`;
+    return detailsBlock('作者视图', body);
+  }
+
+  function detailsBlock(summary, bodyHtml, open = false) {
+    return `<details class="block"${open ? ' open' : ''}><summary>${esc(summary)}</summary><div class="body">${bodyHtml}</div></details>`;
+  }
+
+  /* ---------------- send ---------------- */
+  function payload(text) {
+    return {
+      apiKey: $('apiKey').value,
+      baseUrl: $('baseUrl').value,
+      model: $('model').value,
+      judgeModel: $('judgeModel').value,
+      maxStep: Number($('maxStep').value) || 8,
+      forceMultiAgent: $('force').checked,
+      allowWeb: $('web').checked,
+      userText: text,
+      session
+    };
+  }
+
+  async function send() {
+    const text = input.value.trim();
+    if (!text || busy) return;
+    if (!($('apiKey').value || localStorage.getItem('sama2-apiKey'))) {
+      openSettings();
+      addError('请先在设置里填写 API Key。');
+      return;
     }
-  </script>
+    addUser(text);
+    input.value = '';
+    autoGrow();
+    setBusy(true);
+    const loading = addLoading();
+    try {
+      const response = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload(text))
+      });
+      const data = await response.json();
+      loading.remove();
+      if (!data.ok) { addError(data.error || '诊断失败'); return; }
+      addBot(data);
+      session = data.route === 'need_info' ? data.session : null;
+      updateHint(data);
+    } catch (error) {
+      loading.remove();
+      addError(error?.message || String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateHint(data) {
+    if (data.route === 'need_info') {
+      hint.hidden = false;
+      hint.innerHTML = '正在补充信息：原问题会保留，直接在下面写补充内容即可。';
+      input.placeholder = '只写补充，例如：刚开机的冷机，现象出现在空载';
+      $('footState').textContent = '补充模式 · Enter 发送';
+    } else {
+      hint.hidden = true;
+      hint.innerHTML = '';
+      input.placeholder = '描述故障现象，例如：高桥外圆磨主轴发热并且振动，空载，刚开机';
+      $('footState').textContent = 'Enter 发送 · Shift+Enter 换行';
+    }
+  }
+
+  function setBusy(value) {
+    busy = value;
+    sendBtn.disabled = value;
+    input.disabled = value;
+  }
+
+  function autoGrow() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+  }
+
+  input.addEventListener('input', autoGrow);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      send();
+    }
+  });
+  sendBtn.onclick = send;
+
+  for (const example of document.querySelectorAll('.example')) {
+    example.onclick = () => {
+      input.value = example.dataset.q;
+      autoGrow();
+      input.focus();
+    };
+  }
+
+  $('clearBtn').onclick = () => {
+    chatInner.querySelectorAll('.msg').forEach((node) => node.remove());
+    welcome.hidden = false;
+    session = null;
+    hint.hidden = true;
+    input.value = '';
+    autoGrow();
+    updateHint({ route: 'complex' });
+    input.focus();
+  };
+
+  loadSettings();
+  switchView('diagnose');
+})();
+</script>
 </body>
 </html>
