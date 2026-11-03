@@ -60,3 +60,7 @@ electron/resources/eplan-bridge/publish/*.pdb
 
 # 本机系统笔记
 docs/C盘*.md
+
+# 文献 PDF 仅本机保留（版权原因），清单入库
+docs/文献-方向契合与证据选路/*.pdf
+docs/文献-方向契合与证据选路/*.PDF
