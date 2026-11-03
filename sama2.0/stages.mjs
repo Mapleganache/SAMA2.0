@@ -1,13 +1,14 @@
 import { auditWinner, formatAudit } from './accuracyJudge.mjs'
 import { formatBriefForLane } from './brief.mjs'
-import { renderNeedInfo } from './gaps.mjs'
-import { checkGrounding, evidenceText, isFailedPlan } from './grounding.mjs'
+import { bumpAskedCounts, renderNeedInfo } from './gaps.mjs'
+import { checkGrounding, evidenceText, hasCaseEvidence, isFailedPlan, NO_CASE_BANNER } from './grounding.mjs'
 import { waveDeadline } from './guard.mjs'
 import { formatJudgement, judgePlans } from './judge.mjs'
 import { logEvent } from './log.mjs'
 import { answerSimple } from './mainAgent.mjs'
 import { mapLimit } from './pool.mjs'
 import { buildRoles } from './prompts.mjs'
+import { diversifyLaneQueries, laneSearchHint, laneTemperature, runSqliteTree } from './retrieval-tree.mjs'
 import { runReactSub } from './reactLoop.mjs'
 import { buildRubric } from './rubric.mjs'
 import { loadLlmSettings } from './settings.mjs'
@@ -17,6 +18,7 @@ export async function finishSimple({ query, facts, hard, options, config, starte
   const simple = await answerSimple({ query, history: options.history, llmTimeoutMs: config.llmTimeoutMs })
   const ground = checkGrounding(simple.text, `${simple.evidence || ''}\n用户原文：\n${query || ''}`)
   const prefix = ground.pass ? '' : `这些扭矩、间隙或压力没有出现在本次资料观察中，不能当作事实：${ground.unsupported.join('、')}。\n\n`
+  const banner = hasCaseEvidence(simple.evidence) ? '' : `${NO_CASE_BANNER}\n\n`
   const flow = [
     factStep(facts),
     {
@@ -34,7 +36,7 @@ export async function finishSimple({ query, facts, hard, options, config, starte
   ]
   return pack({
     route: 'simple',
-    answer: `（简单问题，直接答复：${hard.reason}）\n\n${prefix}${simple.text}`,
+    answer: `（简单问题，直接答复：${hard.reason}）\n\n${banner}${prefix}${simple.text}`,
     complexity: hard,
     facts,
     rubric: null,
@@ -52,7 +54,7 @@ export async function finishSimple({ query, facts, hard, options, config, starte
   })
 }
 
-export function finishNeedInfo({ query, facts, complexity, gap, plans, deferred = [], config, started, origin, supplements }) {
+export function finishNeedInfo({ query, facts, complexity, gap, plans, deferred = [], config, started, origin, supplements, askedCounts }) {
   const answer = renderNeedInfo({ fields: { ...gap.fields, phenomena: facts.phenomena, load: { value: facts.load }, thermal: { value: facts.thermal } }, questions: gap.questions })
   const keptSupplements = (supplements || []).filter((item) => item.text && item.text !== origin)
   return pack({
@@ -79,21 +81,39 @@ export function finishNeedInfo({ query, facts, complexity, gap, plans, deferred 
     missing: gap.missing,
     questions: gap.questions,
     deferred,
-    session: { origin: origin || query, pending: gap.missing, supplements: keptSupplements },
+    session: {
+      origin: origin || query,
+      pending: gap.missing,
+      supplements: keptSupplements,
+      askedCounts: bumpAskedCounts(askedCounts, gap.missing),
+    },
   })
 }
 
-export async function sampleWave({ query, count, start, config, budget, runTool, supplements, wave, brief }) {
+export async function sampleWave({ query, count, start, config, budget, runTool, supplements, wave, brief, assumptions }) {
   if (wave > config.waveCap) {
     return [blockedWave(start)]
   }
   // 用户已经补充过一轮后，不再提供 ask_user，避免反复追问进不了评分。
   const allowAskUser = !(Array.isArray(supplements) && supplements.length)
-  const roles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser }).map((role) => applyBriefToRole(role, brief))
+  const firstQueries = diversifyLaneQueries(query, count, start)
+  const roles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser })
+    .map((role, index) => applyLaneSearch(role, firstQueries[index]))
+    .map((role) => applyBriefToRole(role, brief))
+    .map((role) => applyAssumptions(role, assumptions))
   const startedAt = Date.now()
   const deadline = waveDeadline(startedAt, config.subTimeoutMs, count, config.staggerMs)
   return mapLimit(roles, config.concurrency, async (role, index) => {
     if (index > 0) await wait(index * config.staggerMs)
+    const treeSearch = config.treeEnabled
+      ? await runSqliteTree({
+          origin: query,
+          firstQuery: firstQueries[index],
+          hops: config.treeHops,
+          topK: config.treeTopK,
+          gamma: config.treeGamma,
+        }).catch(() => null)
+      : null
     return runReactSub({
       role,
       query,
@@ -102,7 +122,7 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       timeoutMs: config.subTimeoutMs,
       llmTimeoutMs: config.llmTimeoutMs,
       seed: config.seedBase + role.index,
-      tauProp: config.tauProp,
+      tauProp: laneTemperature(config, role.index),
       tauFinal: config.tauFinal,
       toolLimit: config.toolLimit,
       obsPrefix: config.obsPrefix,
@@ -110,9 +130,16 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       budget,
       waveDeadline: deadline,
       supplements,
+      allowIncomplete: Boolean(assumptions?.length),
+      treeSearch,
       mtkbUrl: config.mtkbUrl,
     })
   })
+}
+
+function applyLaneSearch(role, firstQuery) {
+  if (!firstQuery) return role
+  return { ...role, system: `${role.system}\n${laneSearchHint(role.index, firstQuery)}` }
 }
 
 function applyBriefToRole(role, brief) {
@@ -122,6 +149,14 @@ function applyBriefToRole(role, brief) {
     ? '\n你的职责是挑战上面的分析，优先找反例与遗漏，不要顺着它写。'
     : ''
   return { ...role, system: `${role.system}\n\n${appendix}${counter}` }
+}
+
+function applyAssumptions(role, assumptions) {
+  if (!assumptions?.length) return role
+  return {
+    ...role,
+    system: `${role.system}\n作答假设（方案里要保留，不能写成用户已经测量过的事实）：${assumptions.join('；')}`,
+  }
 }
 
 function blockedWave(start) {
@@ -300,6 +335,7 @@ export function pack(result) {
           title: result.accuracy.title || '',
           accuracy: result.accuracy.accuracy ?? null,
           credibility: result.accuracy.credibility ?? null,
+          layers: result.accuracy.layers || null,
           reason: result.accuracy.reason || '',
           ranked: result.accuracy.ranked || [],
           note: result.accuracy.note || '',
@@ -308,6 +344,8 @@ export function pack(result) {
       : null,
     rejected: result.rejected || [],
     missing: result.missing || [],
+    assumptions: result.assumptions || [],
+    pendingQuestions: result.pendingQuestions || [],
     questions: result.questions || [],
     deferred: result.deferred || [],
     session: result.session || null,

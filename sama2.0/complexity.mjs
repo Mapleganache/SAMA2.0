@@ -19,10 +19,24 @@ function symptomHits(text) {
   return SYMPTOM_GROUPS.filter((group) => group.re.test(text)).map((group) => group.id)
 }
 
+export function asksForCause(text) {
+  const compact = String(text || '').replace(/\s+/g, '')
+  if (/怎么理解|如何理解|什么原理|工作原理|的原理/.test(compact)) return false
+  return /最可能的原因|原因是什么|什么原因|故障原因|怎么造成|怎么会|为什么会|为何会|为何出现/.test(compact)
+}
+
+export function isKnowledgeQuery(text) {
+  if (asksForCause(text)) return false
+  const intent = /怎么理解|如何理解|是什么|为什么|什么原理|的原理|工作原理|区别|注意事项|适用边界|怎么选|如何选择/.test(text)
+  const action = /怎么办|如何修|怎么修|怎么查|如何排查|排查|怎么处理|如何处理|怎么维修|如何维修/.test(text)
+  return intent && !action
+}
+
 function isConcept(text) {
   const definition = /^(请问|问一下|想问)?\s*(什么是|啥是|何谓|何为|解释一下|名词解释)/.test(text)
     || /是什么(意思)?[？?]?$/.test(text)
     || /是啥[？?]?$/.test(text)
+    || isKnowledgeQuery(text)
   return definition && !/怎么办|如何修|怎么修|怎么查|如何排查|仍然|依旧|还是/.test(text)
 }
 
@@ -75,6 +89,9 @@ export function classifyByRules(userQuery) {
   }
   if (needsSynthesis(text)) {
     return { level: 'complex', reason: '需要结合型号、工况或历史维修记录综合判断根源', source: 'hard' }
+  }
+  if (asksForCause(text)) {
+    return { level: 'complex', reason: '这是在问故障原因，需要对照资料排查，不能当成名词解释', source: 'hard' }
   }
   if (isConcept(text)) {
     return { level: 'simple', reason: '这是概念或名词解释，没有故障排查需求', source: 'hard' }

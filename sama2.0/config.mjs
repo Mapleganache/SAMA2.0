@@ -24,6 +24,10 @@ export function resolveConfig(options = {}) {
   const briefEnabled = options.briefEnabled != null
     ? Boolean(options.briefEnabled)
     : /^(1|true|yes)$/i.test(String(process.env.SAMA2_BRIEF ?? '1'))
+  const gateMode = String(options.gateMode || process.env.SAMA2_GATE || 'soft').toLowerCase() === 'hard' ? 'hard' : 'soft'
+  const treeEnabled = options.treeEnabled != null
+    ? Boolean(options.treeEnabled)
+    : !/^(0|false|no)$/i.test(String(process.env.SAMA2_TREE ?? '1'))
   return {
     forceMultiAgent: Boolean(options.forceMultiAgent) || envForce,
     maxStep,
@@ -34,6 +38,11 @@ export function resolveConfig(options = {}) {
     tauProp: 0.7,
     tauFinal: 0.2,
     tauJudge: 0.1,
+    laneTemps: [0.35, 0.5, 0.85, 1.0, 0.95],
+    treeEnabled,
+    treeHops: 2,
+    treeTopK: 3,
+    treeGamma: 0.6,
     thetaB: 6,
     seedBase,
     toolLimit: 4,
@@ -43,6 +52,7 @@ export function resolveConfig(options = {}) {
     staggerMs: 400,
     allowWeb,
     briefEnabled,
+    gateMode,
     mtkbUrl: String(options.mtkbUrl || process.env.SAMA2_MTKB_URL || 'http://127.0.0.1:8765'),
   }
 }

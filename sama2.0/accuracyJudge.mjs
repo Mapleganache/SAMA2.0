@@ -30,6 +30,7 @@ export async function auditWinner({ query, plan, timeoutMs, temperature = 0.1 })
       credibility,
       reason: String(row.reason || '').trim(),
       note: String(parsed?.note || '').trim(),
+      layers: auditLayers(row, plan, accuracy, credibility),
       model: response.model || '',
       ranked: [],
     }
@@ -46,7 +47,21 @@ export function formatAudit(review) {
   if (!review || review.accuracy == null) {
     return `\n\n### 审计附录\n${review?.note || '审计未完成'}。选定方案不变。`
   }
-  return `\n\n### 审计附录\n准确性 ${review.accuracy}/10，可信度 ${review.credibility}/10。\n${review.reason || '未写理由'}${review.note ? `\n${review.note}` : ''}`
+  const layers = review.layers
+  const layerLine = layers
+    ? `\n分层：机理 ${layers.mechanism}/10；具体措施 ${layers.measure}/10；不确定性表达 ${layers.uncertainty}/10`
+    : ''
+  return `\n\n### 审计附录\n准确性 ${review.accuracy}/10，可信度 ${review.credibility}/10。${layerLine}\n${review.reason || '未写理由'}${review.note ? `\n${review.note}` : ''}`
+}
+
+function auditLayers(row, plan, accuracy, credibility) {
+  const given = row?.layers || {}
+  const admits = /候选方向|本地无|依据不足|需现场验证/.test(plan?.plan || '')
+  return {
+    mechanism: clampScore(given.mechanism ?? accuracy),
+    measure: clampScore(given.measure ?? credibility),
+    uncertainty: clampScore(given.uncertainty ?? (admits ? 8 : 4)),
+  }
 }
 
 function accuracySystem() {
@@ -54,7 +69,8 @@ function accuracySystem() {
 accuracy 准确性：是否对准用户描述的现象，根因是否由这些现象推出来，有没有把用户没提到的故障当成已经确认的主因。
 credibility 可信度：结论有多少能回溯到用户原文，或方案里写明的检查依据。出现没有出处的扭矩、间隙、压力、油压、精度数值就降分。没有实测时，把结论写成待测和排查的，可信度可以高；把猜测写成定论的，可信度要低。
 准确性和可信度都用 0 到 10 的整数打分（不是 0–1 比例），10 表示最好。
-只输出 JSON：{"accuracy":0,"credibility":0,"reason":"一句理由"}`
+再给三层参考分：mechanism 机理，measure 具体措施，uncertainty 没依据时是否写成候选方向。
+只输出 JSON：{"accuracy":0,"credibility":0,"layers":{"mechanism":0,"measure":0,"uncertainty":0},"reason":"一句理由"}`
 }
 
 function normalizeAuditScore(value) {

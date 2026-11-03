@@ -1,3 +1,10 @@
+const CASE_ID = /sqlite_(?:curated|fragment|case):\d+|knowledge\/[A-Za-z0-9._-]+#\d+-\d+/
+export const NO_CASE_BANNER = '本地无该案例资料，以下为候选方向，需现场验证，不能当成已确认原因。'
+
+export function hasCaseEvidence(text) {
+  return CASE_ID.test(String(text || ''))
+}
+
 const SPEC_RE = /(\d+(?:\.\d+)?)\s*(MPa|kPa|bar|Pa|μm|µm|um|mm|N\s*[·.*]\s*m|Nm)/gi
 const KNOWLEDGE_ID = /knowledge\/[A-Za-z0-9._-]+#\d+-\d+/g
 // 只认本系统产出的引用前缀；不要把 ISO:9001、图:3 这类标准号/编号当作出处 ID。

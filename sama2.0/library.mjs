@@ -4,9 +4,18 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { sama2Root } from './settings.mjs'
 
-export function searchLibrary(query, { subsystem = '', domain = '', limit = 4 } = {}) {
+const MECHANICAL_DOMAIN = ['机械', '液压', '润滑', '主轴', '进给', '冷却', '机床']
+
+export function domainRefusal(domain) {
   const area = String(domain || '').trim()
-  if (area && area !== '机械') return '本地知识库没有该领域的文档。'
+  if (!area || MECHANICAL_DOMAIN.some((name) => area.includes(name))) return ''
+  if (/电路|电气|PLC|LAD/i.test(area)) return '本地知识库没有该领域的文档。'
+  return ''
+}
+
+export function searchLibrary(query, { subsystem = '', domain = '', limit = 4 } = {}) {
+  const refused = domainRefusal(domain)
+  if (refused) return refused
   try {
     const database = databaseOptions()
     if (database) return searchSqliteLibrary(query, { subsystem, limit, ...database })

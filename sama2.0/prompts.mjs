@@ -10,6 +10,7 @@ const SHARED_TOOLS = [
 const SHARED_SYSTEM = `你是磨床维修求解者。请独立阅读完整故障描述，按你自己的理解判断和作答。
 查不查资料、先看什么、方案怎么组织，都由你自己决定。
 没有实测或资料原文时，不要编造扭矩、间隙、压力、油压、精度和备件规格。
+检索没有对得上的案例编号，或只查到别的案例时，不要写成已经确认的唯一原因。方案开头写明：本地无该案例资料，以下为候选方向，需现场验证。
 引用本地笔记时写下观察里的 knowledge/文件#起-止。引用案例时写下观察里的 chunk id。
 机型、现象、空载或磨削、冷机或热机已经齐全时，优先直接给排查方案；细节不明就写明假设继续做，不要为了轴承型号、具体转速等再向用户追问。`
 
@@ -33,7 +34,7 @@ export const SUB_ROLES = buildRoles(5)
 
 export function toolGuide(toolNames) {
   const catalog = {
-    search_knowledge: 'search_knowledge：检索本地笔记。args: {"query":"关键词","subsystem":"主轴","domain":"机械"}。domain 为空视为机械；不是机械时本地库直接说明没有该领域。返回带 knowledge/文件#起-止。',
+    search_knowledge: 'search_knowledge：检索本地笔记。args: {"query":"关键词","subsystem":"主轴","domain":"机械"}。液压、润滑、主轴、进给、冷却都按机械检索。只有电路、电气、PLC、LAD 会说明没有该领域，未知 domain 忽略。返回带 knowledge/文件#起-止。',
     lookup_baseline: 'lookup_baseline：读取测点模板。args: {"query":"故障原文"}。对不上子系统时不会默认主轴。返回带 baseline/子系统。',
     lookup_grind_dialect: 'lookup_grind_dialect：识别磨床家族。args: {"query":"含机床型号的原文"}。只识别家族，不提供数值。',
     ask_user: 'ask_user：仅当缺少机型、现象、空载或磨削、冷机或热机这类硬分叉，不追问就无法起步时才用。轴承型式、转速、润滑细节等可先假设并写在方案里。args: {"questions":[{"id":"spindle_or_head","text":"80字以内"}]}。id 只用小写字母、数字和下划线。一路最多两个问题。',

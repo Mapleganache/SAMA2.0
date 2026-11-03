@@ -1,8 +1,8 @@
 import { lookupBaseline } from './baselines.mjs'
 import { extractFaultFacts } from './facts.mjs'
-import { questionsFor, composeSessionQuery, textAfterCorrection } from './gaps.mjs'
+import { questionsFor, composeSessionQuery, textAfterCorrection, gateDecision } from './gaps.mjs'
 import { extractJson } from './json.mjs'
-import { checkGrounding, kappa } from './grounding.mjs'
+import { checkGrounding, hasCaseEvidence, kappa, NO_CASE_BANNER } from './grounding.mjs'
 import { actionKey, createStepBudget, isDuplicate, samePrefix } from './guard.mjs'
 import { recordMeasurement } from './measurements.mjs'
 import { searchMtkb } from './mtkb.mjs'
@@ -19,6 +19,14 @@ check('磨床有问题没有默认主轴', lookupBaseline('磨床有问题').len
 
 const heat = questionsFor('主轴发热')
 check('主轴发热缺型号和工况', heat.missing.join() === 'machine,load,thermal')
+const softHeat = gateDecision('主轴发热')
+check('软门控对主轴发热改为假设', softHeat.action === 'sample' && softHeat.assumptions.some((item) => item.includes('磨削')) && softHeat.assumptions.some((item) => item.includes('热机')))
+check('硬门控仍拦住主轴发热', gateDecision('主轴发热', { mode: 'hard' }).action === 'ask')
+check('无机型无现象仍然追问', gateDecision('磨床有问题').action === 'ask')
+check('同一字段问过两次后放行', gateDecision('磨床有问题', { askedCounts: { machine: 2, phenomenon: 2, load: 2, thermal: 2 } }).action === 'sample')
+check('原因题即使缺项也进入采样', gateDecision('最可能的原因是什么').action === 'sample')
+check('无案例编号不算有依据', hasCaseEvidence('本地资料没有命中') === false && NO_CASE_BANNER.includes('候选方向') && NO_CASE_BANNER.includes('本地无该案例资料'))
+check('案例编号算有依据', hasCaseEvidence('参考 sqlite_curated:4') === true)
 
 const ready = questionsFor('STUDER 主轴发热，空载，刚开机')
 check('四项齐全可以开始', ready.missing.length === 0)

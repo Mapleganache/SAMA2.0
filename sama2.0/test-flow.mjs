@@ -82,7 +82,8 @@ globalThis.fetch = async (_url, init) => {
   if (system.includes('禁止再调用工具') && control.alwaysTool) {
     return jsonResponse({ choices: [{ message: { content: '{"thought":"还想查","tool":"lookup_baseline","args":{"query":"主轴"}}' } }] })
   }
-  if (control.askLane && system.includes(control.askLane) && user.includes('（还没有）')) {
+  const idle = user.includes('（还没有）') || (user.includes('本路检索树') && !/第[1-9]步/.test(user))
+  if (control.askLane && system.includes(control.askLane) && idle) {
     return jsonResponse({
       choices: [{
         message: {
@@ -95,8 +96,7 @@ globalThis.fetch = async (_url, init) => {
       }],
     })
   }
-  const first = user.includes('（还没有）')
-  if (first && !system.includes('禁止再调用工具')) {
+  if (idle && !system.includes('禁止再调用工具')) {
     return jsonResponse({
       choices: [{ message: { content: JSON.stringify({ thought: '先取测点', tool: 'lookup_baseline', args: { query: user.slice(0, 40) } }) } }],
     })
@@ -136,8 +136,8 @@ check('含糊诊断四项都缺', ['machine', 'phenomenon', 'load', 'thermal'].e
 check('含糊诊断不给步骤', vague.answer.includes('还不能给出排查步骤') && !vague.answer.includes('主轴轴承'))
 
 calls.length = 0
-const heat = await runSama2({ userText: '主轴发热' })
-check('只有主轴发热仍先提问', heat.route === 'need_info' && heat.missing.includes('machine') && heat.missing.includes('load') && !heat.missing.includes('phenomenon'))
+const heat = await runSama2({ userText: '主轴发热', maxStep: 4 })
+check('只有主轴发热按假设作答', heat.route !== 'need_info' && heat.answer.includes('按假设作答') && heat.answer.includes('机型未知') && heat.assumptions.some((item) => item.includes('磨削')) && heat.assumptions.some((item) => item.includes('热机')))
 
 calls.length = 0
 control.classifier = 'simple'
@@ -163,14 +163,21 @@ const ids = complex.plans.map((plan) => plan.id).sort()
 check('复杂题走五路', complex.route === 'complex' && ids.join() === 'sub0,sub1,sub2,sub3,sub4')
 check('硬规则复杂题不再调用分类器', calls.every((call) => !call.system.includes('问题分类器')))
 check('每路都拿到完整原题', calls.filter((call) => call.system.includes('独立求解')).every((call) => call.user.includes(ready)))
-check('每路先行动再收束', complex.plans.every((plan) => plan.stepCount === 2 && plan.trace[0].tool && plan.trace[1].final))
-check('提议温度和种子分开', calls.some((call) => call.system.includes('第1路独立求解') && call.temperature === 0.7 && call.seed === 1000) && calls.some((call) => call.system.includes('第2路独立求解') && call.seed === 1001))
+check('每路先行动再收束', complex.plans.every((plan) => {
+  const acted = (plan.trace || []).filter((step) => step.step > 0)
+  return plan.stepCount === 2 && acted[0]?.tool && acted[1]?.final
+}))
+check('提议温度和种子分开', calls.some((call) => call.system.includes('第1路独立求解') && call.temperature === 0.35 && call.seed === 1000) && calls.some((call) => call.system.includes('第2路独立求解') && call.temperature === 0.5 && call.seed === 1001))
+check('五路检索入口错开', calls.some((call) => call.system.includes('第1路独立求解') && call.system.includes('本路第一次查询词')) && calls.some((call) => call.system.includes('第3路独立求解') && call.system.includes('本路第一次查询词')) && (calls.find((call) => call.system.includes('第1路独立求解')).system !== calls.find((call) => call.system.includes('第3路独立求解')).system))
 check('五路提示没有指定分析角度', calls.filter((call) => call.system.includes('独立求解')).every((call) => !/根源分析专家|风险审查|分步排查|维修文档|现场实操/.test(call.system)))
 const sub1Notes = calls.filter((call) => call.system.includes('第1路独立求解') && !call.user.includes('（还没有）'))
 const sub2Notes = calls.filter((call) => call.system.includes('第2路独立求解') && !call.user.includes('（还没有）'))
 check('子代理之间看不到对方记录', sub1Notes.length > 0 && sub1Notes.every((call) => !call.user.includes('第2路')) && sub2Notes.every((call) => !call.user.includes('第1路')))
 check('只交付综合分最高的一份', complex.judge?.winnerId === 'sub1' && complex.accuracy?.bestId === 'sub1' && complex.answer.includes('第2路的完整维修方案') && complex.answer.includes('评分汇总') && !complex.answer.includes('两项分别保留'))
 check('审计附在中选方案后面', complex.accuracy?.accuracy === 8 && complex.accuracy?.credibility === 7 && complex.answer.includes('审计附录'))
+check('无案例编号时标明候选方向', complex.answer.includes('本地无该案例资料') || (complex.plans || []).some((plan) => (plan.trace || []).some((step) => String(step.observation || '').includes('sqlite_'))))
+check('复杂题写下检索树', complex.plans.every((plan) => (plan.trace || []).some((step) => step.reason === 'retrieval_tree')))
+check('评分能看到三层', complex.answer.includes('机理') && complex.answer.includes('具体措施') && complex.answer.includes('不确定性表达'))
 check('流程走向和思考被记下来', complex.flow?.some((step) => step.title === '判定为复杂问题') && complex.plans.every((plan) => plan.trace.some((step) => step.thought)))
 check('brief 存在时 judge prompt 含检查表', complex.brief?.ok === true && calls.some((call) => call.system.includes('评判员') && call.user.includes('评分检查表')))
 
@@ -188,7 +195,10 @@ control.alwaysTool = true
 const capped = await runSama2({ userText: 'STUDER 换了轴承还是发热，空载，刚开机', maxStep: 2 })
 control.alwaysTool = false
 check('达到轮次上限后强制收束', capped.plans.every((plan) => plan.stepCount === 2 && plan.plan.includes('已按轮次上限收束的方案')))
-check('上限轮不再执行工具', capped.plans.every((plan) => plan.trace[1].tool === ''))
+check('上限轮不再执行工具', capped.plans.every((plan) => {
+  const last = (plan.trace || []).filter((step) => step.step > 0).at(-1)
+  return last?.final && last.tool === ''
+}))
 
 calls.length = 0
 const forcedVague = await runSama2({ userText: '什么是砂轮动平衡', forceMultiAgent: true, maxStep: 4 })
@@ -219,6 +229,23 @@ const generateCalls = calls.filter((item) => /独立求解|问题分类器|这�
 check('评判走独立模型名', judgeCalls.length > 0 && judgeCalls.every((item) => item.model === 'test-judge-model'))
 check('生成仍用生成模型名', generateCalls.length > 0 && generateCalls.every((item) => item.model === 'test-model'))
 check('结果带回评判模型', mixed.judge?.model === 'test-judge-model' && mixed.meta?.judgeModel === 'test-judge-model')
+
+calls.length = 0
+const oil = await runSama2({ userText: '液压油乳化、起泡，换油周期缩短', maxStep: 4 })
+check('缺工况仍交付并写出假设', oil.route !== 'need_info' && oil.answer.includes('按假设作答') && oil.assumptions.filter((item) => item.includes('磨削') || item.includes('热机')).length === 2 && oil.answer.includes('待确认问题'))
+
+calls.length = 0
+const understood = await runSama2({ userText: '关于「静压轴承温升过高」怎么理解' })
+check('知识题直接回答', understood.route === 'simple' && understood.answer.includes('静压轴承') && calls.every((call) => !call.system.includes('问题分类器') && !call.system.includes('独立求解')))
+
+const hardHeat = await runSama2({ userText: '主轴发热', gateMode: 'hard' })
+check('硬门控仍先追问', hardHeat.route === 'need_info' && hardHeat.missing.includes('machine') && hardHeat.missing.includes('load'))
+
+const firstAsk = await runSama2({ userText: '磨床有问题' })
+const secondAsk = await runSama2({ userText: '不知道', session: firstAsk.session })
+check('第一次不知道仍追问', secondAsk.route === 'need_info' && secondAsk.answer.includes('还不能给出排查步骤'))
+const assumed = await runSama2({ userText: '不知道', session: secondAsk.session, maxStep: 4 })
+check('第二次不知道后按假设作答', assumed.route !== 'need_info' && assumed.answer.includes('按假设作答') && !assumed.answer.includes('还不能给出排查步骤'))
 
 if (problems.length) {
   console.error(`\n${problems.length} failed: ${problems.join('、')}`)

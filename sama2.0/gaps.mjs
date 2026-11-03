@@ -1,3 +1,7 @@
+import { asksForCause, isKnowledgeQuery } from './complexity.mjs'
+
+const FIELD_IDS = new Set(['machine', 'phenomenon', 'load', 'thermal'])
+
 const MACHINE_PATTERNS = [
   /STUDER[^，。,\s]*/i,
   /斯图特[^，。,\s]*/,
@@ -19,7 +23,7 @@ const PHENOMENA = [
   ['异响', /异响|噪声|噪音|啸叫/],
   ['精度或表面', /精度|超差|烧伤|波纹|粗糙|圆度|密纹|拉毛|划伤/],
   ['运动异常', /爬行|卡滞|不转|停转|抱轴|抱死|咬死|闷车/],
-  ['液压润滑', /泄漏|漏油|压力|油压|断油|不上油/],
+  ['液压润滑', /泄漏|漏油|压力|油压|断油|不上油|乳化|起泡|变质|泡沫/],
   ['报警', /报警/],
 ]
 
@@ -99,6 +103,35 @@ export function questionsFor(userQuery) {
   return { fields, missing, questions }
 }
 
+export function gateDecision(query, { mode = 'soft', askedCounts = {} } = {}) {
+  const { missing } = missingFields(query)
+  const pack = questionsFor(query)
+  const cause = asksForCause(query)
+  if (mode !== 'hard' && !cause && isKnowledgeQuery(String(query || '').replace(/\s+/g, ''))) {
+    return { action: 'answer', assumptions: [], pending: [], missing }
+  }
+  if (!missing.length) return { action: 'sample', assumptions: [], pending: [], missing }
+  const blocked = missing.filter((id) => (askedCounts[id] || 0) < 2)
+  const hardMissing = missing.filter((id) => id === 'machine' || id === 'phenomenon')
+  const mustAsk = !cause && (mode === 'hard' || hardMissing.length === 2)
+  if (mustAsk && blocked.length) return { action: 'ask', assumptions: [], pending: pack.questions, missing }
+  const assumptions = []
+  if (missing.includes('load')) assumptions.push('未提供工况，按「磨削中」假设')
+  if (missing.includes('thermal')) assumptions.push('未提供冷热态，按「热机」假设')
+  if (missing.includes('machine')) assumptions.push('机型未知，不套用其他型号的参数')
+  if (missing.includes('phenomenon')) assumptions.push('现象未写清，只按原文已有描述排查')
+  return { action: 'sample', assumptions, pending: pack.questions, missing }
+}
+
+export function bumpAskedCounts(askedCounts, ids) {
+  const next = { ...(askedCounts || {}) }
+  for (const id of ids || []) {
+    if (!FIELD_IDS.has(id)) continue
+    next[id] = (next[id] || 0) + 1
+  }
+  return next
+}
+
 export function renderNeedInfo({ fields, questions }) {
   const lines = ['还不能给出排查步骤。', '']
   questions.forEach((item, index) => {
@@ -112,13 +145,18 @@ export function renderNeedInfo({ fields, questions }) {
 
 export function composeSessionQuery(userText, session) {
   const text = String(userText || '').trim()
-  if (!session?.origin) return { query: text, origin: text, supplements: [] }
+  if (!session?.origin) return { query: text, origin: text, supplements: [], askedCounts: {} }
   const prev = Array.isArray(session.supplements) ? session.supplements : []
   const supplements = prev.concat([{ id: 'reply', text }])
   const query = [String(session.origin).trim(), ...supplements.map((item) => String(item.text || '').trim())]
     .filter(Boolean)
     .join('\n')
-  return { query, origin: String(session.origin).trim(), supplements }
+  return {
+    query,
+    origin: String(session.origin).trim(),
+    supplements,
+    askedCounts: { ...(session.askedCounts || {}) },
+  }
 }
 
 export function parseAskUser(args) {

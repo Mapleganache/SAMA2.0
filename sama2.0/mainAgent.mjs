@@ -59,7 +59,8 @@ export async function answerSimple({ query, history, llmTimeoutMs }) {
   const prior = formatHistory(history)
   const response = await callText({
     system: `你是磨床维修助手。这是简单问题，直接回答，不要展开成多套竞争方案。
-优先使用给出的资料。资料没有的参数、页码、扭矩、间隙不要编造。回答用中文，尽量短。`,
+优先使用给出的资料。资料没有的参数、页码、扭矩、间隙不要编造。
+资料里没有对得上的案例编号时，不要给单一确定原因。开头写明：本地无该案例资料，以下为候选方向，需现场验证。回答用中文，尽量短。`,
     user: `${prior}用户问题：\n${query}\n\n可参考资料：\n${evidence}`,
     temperature: 0.2,
     timeoutMs: llmTimeoutMs,

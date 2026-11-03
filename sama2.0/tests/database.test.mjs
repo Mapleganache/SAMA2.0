@@ -60,6 +60,8 @@ test('search_mtkb无需8765服务，不发起额外HTTP并保留设备匹配限�
 })
 test('领域、型号、LAD边界及无依据数值不越级',()=>{
  assert.match(searchLibrary('急停',{domain:'电路'}),/没有该领域/)
+ assert.match(searchLibrary('液压油乳化起泡 换油周期缩短',{domain:'液压'}),/C08-31/)
+ assert.match(searchLibrary('液压油乳化起泡 换油周期缩短',{domain:'光学'}),/C08-31/)
  assert.match(searchLibrary('磨床型号ZXQ987654321的报警'),/尚无经核验/)
  assert.match(searchLibrary('STUDER PMC急停'),/原图\/LAD/)
  assert.match(searchLibrary('无型号主轴油压应该设多少MPa确定值'),/不能给出确定数值/)

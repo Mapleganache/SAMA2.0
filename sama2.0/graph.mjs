@@ -3,8 +3,8 @@ import { buildBrief } from './brief.mjs'
 import { resolveConfig } from './config.mjs'
 import { classifyByRules } from './complexity.mjs'
 import { extractFaultFacts } from './facts.mjs'
-import { collectQuestions, composeSessionQuery, questionsFor } from './gaps.mjs'
-import { checkGrounding, evidenceText, isFailedPlan } from './grounding.mjs'
+import { collectQuestions, composeSessionQuery, gateDecision, questionsFor } from './gaps.mjs'
+import { checkGrounding, evidenceText, hasCaseEvidence, isFailedPlan, NO_CASE_BANNER } from './grounding.mjs'
 import { createStepBudget } from './guard.mjs'
 import { safetyOnly } from './judge.mjs'
 import { logEvent } from './log.mjs'
@@ -25,6 +25,8 @@ const DiagnosisState = Annotation.Root({
   brief: Annotation(),
   plans: Annotation(),
   asked: Annotation(),
+  assumptions: Annotation(),
+  gatePending: Annotation(),
   need: Annotation(),
   next: Annotation(),
   result: Annotation(),
@@ -45,10 +47,17 @@ async function intake(state) {
   const hard = classifyByRules(query)
   const base = { config, sessionQuery, query, facts, hard, brief: null }
 
-  if (!config.forceMultiAgent && hard?.level === 'simple') return { ...base, next: 'simple' }
+  const gate = gateDecision(query, { mode: config.gateMode, askedCounts: sessionQuery.askedCounts || {} })
+  if (!config.forceMultiAgent && (hard?.level === 'simple' || gate.action === 'answer')) {
+    const complexity = hard?.level === 'simple'
+      ? hard
+      : { level: 'simple', reason: '这是知识或理解问题，没有故障排查需求', source: 'hard' }
+    return { ...base, complexity, assumptions: [], gatePending: [], next: 'simple' }
+  }
 
   const gap = questionsFor(query)
-  if (gap.missing.length && (config.forceMultiAgent || hard?.level === 'complex' || !hard)) {
+  const stillBlocking = gate.missing.some((id) => (sessionQuery.askedCounts?.[id] || 0) < 2)
+  if (gate.action === 'ask' || (config.forceMultiAgent && gate.missing.length && stillBlocking)) {
     const complexity = config.forceMultiAgent
       ? { level: 'complex', reason: 'force_multi_agent 已开启，但必填项还没齐', source: 'force' }
       : hard?.level === 'complex'
@@ -57,6 +66,8 @@ async function intake(state) {
     return {
       ...base,
       complexity,
+      assumptions: [],
+      gatePending: [],
       next: 'need_info',
       need: {
         query,
@@ -68,15 +79,22 @@ async function intake(state) {
         started,
         origin: sessionQuery.origin,
         supplements: sessionQuery.supplements.filter((item) => item.text && item.text !== sessionQuery.origin),
+        askedCounts: sessionQuery.askedCounts || {},
       },
     }
   }
 
+  const assumptions = gate.assumptions || []
+  const gatePending = gate.pending || []
+  const notedFacts = assumptions.length
+    ? { ...facts, constraints: [...(facts.constraints || []), ...assumptions] }
+    : facts
+  const carried = { ...base, facts: notedFacts, assumptions, gatePending }
   if (config.forceMultiAgent) {
-    return { ...base, complexity: { level: 'complex', reason: 'force_multi_agent 已开启，跳过复杂度判断', source: 'force' }, next: 'main_brief' }
+    return { ...carried, complexity: { level: 'complex', reason: 'force_multi_agent 已开启，跳过复杂度判断', source: 'force' }, next: 'main_brief' }
   }
-  if (hard?.level === 'complex') return { ...base, complexity: hard, next: 'main_brief' }
-  return { ...base, next: 'classify' }
+  if (hard?.level === 'complex') return { ...carried, complexity: hard, next: 'main_brief' }
+  return { ...carried, next: 'classify' }
 }
 
 async function simpleNode(state) {
@@ -137,6 +155,7 @@ async function sampleNode(state) {
       supplements: sessionQuery.supplements,
       wave: ++waves,
       brief,
+      assumptions: state.assumptions,
     })
   } else {
     plans = await sampleWave({
@@ -149,6 +168,7 @@ async function sampleNode(state) {
       supplements: sessionQuery.supplements,
       wave: ++waves,
       brief,
+      assumptions: state.assumptions,
     })
     const asked = collectQuestions(plans)
     if (!asked.questions.length && plans[0] && plans[0].status !== 'failed') {
@@ -166,6 +186,7 @@ async function sampleNode(state) {
           supplements: sessionQuery.supplements,
           wave: ++waves,
           brief,
+          assumptions: state.assumptions,
         })
         plans = plans.concat(rest)
       }
@@ -199,6 +220,7 @@ async function sampleNode(state) {
         started,
         origin: sessionQuery.origin,
         supplements: sessionQuery.supplements,
+        askedCounts: sessionQuery.askedCounts || {},
       },
     }
   }
@@ -216,15 +238,24 @@ async function verifyNode(state) {
     config,
     brief,
   })
-  const pending = asked?.questions?.length
-    ? `\n\n### 待确认问题\n另有 ${asked.questions.length} 条待确认：\n${asked.questions.map((item, index) => `${index + 1}. ${item.text}`).join('\n')}`
+  const pendingQuestions = pendingLines(state.gatePending, asked?.questions)
+  const pending = pendingQuestions.length
+    ? `\n\n### 待确认问题\n${pendingQuestions.map((text, index) => `${index + 1}. ${text}`).join('\n')}`
     : ''
-  const answer = `（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，只交付综合分选出的一份：${complexity.reason}）\n\n${judged.answer}${pending}`
+  const assumptionLine = (state.assumptions || []).length
+    ? `（按假设作答：${state.assumptions.join('；')}）\n\n`
+    : ''
+  const winnerPlan = plans.find((plan) => plan.id === judged.winner?.id)
+  const winnerNotes = (winnerPlan?.notes || []).map((note) => note.observation).join('\n')
+  const banner = winnerPlan && !hasCaseEvidence(winnerNotes) ? `${NO_CASE_BANNER}\n\n` : ''
+  const answer = `${assumptionLine}（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，只交付综合分选出的一份：${complexity.reason}）\n\n${banner}${judged.answer}${pending}`
   const result = pack({
     route: judged.winner ? 'complex' : 'no_plan',
     answer,
     complexity,
     facts,
+    assumptions: state.assumptions || [],
+    pendingQuestions,
     brief: brief || null,
     rubric: judged.rubric || buildRubric(facts, brief),
     plans: plans.map(publicPlanSafe),
@@ -240,6 +271,13 @@ async function verifyNode(state) {
     session: null,
   })
   return { result }
+}
+
+function pendingLines(gatePending, laneQuestions) {
+  const fromGate = (gatePending || []).map((item) => String(item.text || item || '').trim()).filter(Boolean)
+  const fromLanes = (laneQuestions || []).map((item) => String(item.text || '').trim()).filter(Boolean)
+  const seen = new Set(fromGate)
+  return [...fromGate, ...fromLanes.filter((text) => !seen.has(text))]
 }
 
 function publicPlanSafe(plan) {

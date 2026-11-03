@@ -37,6 +37,7 @@ const server = http.createServer(async (request, response) => {
         maxStep: body.maxStep,
         session: body.session,
         allowWeb: Boolean(body.allowWeb),
+        gateMode: body.gateMode,
       })
       sendJson(response, 200, {
         ok: true,
@@ -51,6 +52,8 @@ const server = http.createServer(async (request, response) => {
         rubric: result.rubric,
         meta: result.meta,
         missing: result.missing,
+        assumptions: result.assumptions,
+        pendingQuestions: result.pendingQuestions,
         questions: result.questions,
         deferred: result.deferred,
         rejected: result.rejected,

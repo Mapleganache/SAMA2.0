@@ -2,6 +2,7 @@ import { DIMENSIONS } from './config.mjs'
 import { clip, extractJson } from './json.mjs'
 import { callText } from './llm.mjs'
 import { logEvent } from './log.mjs'
+import { hasCaseEvidence } from './grounding.mjs'
 import { clampScore, normalizeScores, pickWinner } from './score.mjs'
 
 export async function safetyOnly({ query, plan, timeoutMs, temperature = 0.1 }) {
@@ -63,7 +64,7 @@ export async function judgePlans({ query, rubric, plans, timeoutMs, temperature 
     return { ok: false, winner: fallback, ranked: [], fallback: true, note: note || '评判不可用，未产生评分', model }
   }
 
-  const ranked = pickWinner(plans, rows.map(normalizeRow))
+  const ranked = attachLayers(pickWinner(plans, rows.map(normalizeRow)), plans, rows)
   if (!ranked.length) {
     return { ok: false, winner: null, ranked: [], note: note || '评分结果无法对应到有效方案', model }
   }
@@ -91,8 +92,9 @@ function judgeSystem() {
 对每一套方案按 0 到 10 分评估：${fields}。
 安全性看能量隔离、砂轮防护、是否阻止带压带电拆卸。定位准确性看是否对准用户现象且没有编造数值。
 生成失败的方案每一项都给 0，defect 写失败原因。
+另给三层参考分，不改变加权名次：mechanism 机理是否对准现象，measure 具体措施是否写得可执行，uncertainty 没依据时有没有写成候选方向而不是单一结论。
 只输出 JSON：
-{"note":"一句总评","scores":[{"id":"sub1","scores":{"accuracy":0,"safety":0,"feasibility":0,"completeness":0,"brevity":0},"defect":"若不是最优，写一句主要缺陷；最优项 defect 可为空"}]}`
+{"note":"一句总评","scores":[{"id":"sub1","scores":{"accuracy":0,"safety":0,"feasibility":0,"completeness":0,"brevity":0},"layers":{"mechanism":0,"measure":0,"uncertainty":0},"defect":"若不是最优，写一句主要缺陷；最优项 defect 可为空"}]}`
 }
 
 function judgeUser(query, rubric, plans) {
@@ -154,7 +156,32 @@ ${lines.join('\n')}
 
 ### 未进入候选
 ${[...dropped, ...failed].join('\n') || '无'}
+${formatLayers(judgement.winner?.layers)}
 ${judgement.note ? `\n${judgement.note}` : ''}`
+}
+
+function attachLayers(ranked, plans, rawRows) {
+  const raw = new Map((rawRows || []).map((row) => [String(row?.id || ''), row]))
+  return ranked.map((row) => {
+    const plan = plans.find((item) => item.id === row.id)
+    const notes = (plan?.notes || []).map((note) => note.observation).join('\n')
+    const given = raw.get(row.id)?.layers || {}
+    const admits = /候选方向|本地无|依据不足|需现场验证/.test(plan?.plan || '')
+    const cited = hasCaseEvidence(notes)
+    return {
+      ...row,
+      layers: {
+        mechanism: clampScore(given.mechanism ?? row.scores.accuracy),
+        measure: clampScore(given.measure ?? row.scores.completeness),
+        uncertainty: clampScore(given.uncertainty ?? (admits ? 8 : cited ? 6 : 2)),
+      },
+    }
+  })
+}
+
+function formatLayers(layers) {
+  if (!layers) return ''
+  return `\n分层：机理 ${layers.mechanism}/10；具体措施 ${layers.measure}/10；不确定性表达 ${layers.uncertainty}/10`
 }
 
 function labelUnsupported(items) {

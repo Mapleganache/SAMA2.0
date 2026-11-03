@@ -72,6 +72,29 @@ function createLane(options) {
       executed: false,
     })
   }
+  if (options.treeSearch?.text) {
+    const query = options.treeSearch.query || ''
+    lane.notes.push({
+      step: 0,
+      tool: 'search_knowledge',
+      args: { query },
+      observation: `${lane.id}-tree\n${options.treeSearch.text}`,
+      raw: clip(options.treeSearch.text, 3500),
+      executed: true,
+      key: actionKey('search_knowledge', { query }),
+      obsId: `${lane.id}-tree`,
+      thought: '本路按独立入口检索，再沿命中资料向外跳',
+    })
+    lane.trace.push({
+      step: 0,
+      thought: '本路按独立入口检索，再沿命中资料向外跳',
+      tool: 'search_knowledge',
+      args: { query },
+      observation: clip(options.treeSearch.text, 800),
+      final: false,
+      reason: 'retrieval_tree',
+    })
+  }
   return lane
 }
 
@@ -165,7 +188,15 @@ async function modelStep(lane, ctx) {
     final: Boolean(decision.final) || mustFinish,
     reason,
   })
-  logEvent('sub_step', { id: ctx.role.id, step: lane.stepCount, tool: decision.tool || '', finish: Boolean(decision.final) || mustFinish })
+  logEvent('sub_step', {
+    id: ctx.role.id,
+    step: lane.stepCount,
+    tool: decision.tool || '',
+    finish: Boolean(decision.final) || mustFinish,
+    domain: String(decision.args?.domain || '').slice(0, 40),
+    subsystem: String(decision.args?.subsystem || '').slice(0, 40),
+    query: String(decision.args?.query || '').replace(/\s+/g, ' ').slice(0, 50),
+  })
 
   if (decision.invalid) {
     lane.trace[lane.trace.length - 1].final = false
@@ -267,7 +298,7 @@ async function closeLane(lane, ctx) {
       deadline: ctx.deadline,
       mtkbUrl: ctx.mtkbUrl,
     })
-    if (lane.supervisor?.missing?.length) {
+    if (lane.supervisor?.missing?.length && !ctx.allowIncomplete) {
       lane.status = 'need_info'
       lane.stopReason = lane.stopReason || 'missing_fields'
     }

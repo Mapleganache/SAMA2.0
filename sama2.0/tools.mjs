@@ -20,7 +20,7 @@ export function buildDiagnosticTools({ query = '', facts = {}, allowWeb = false,
       }),
       {
         name: 'search_knowledge',
-        description: '检索本地磨床维修笔记。domain 为空视为机械；不是机械时本地库直接说明没有该领域。SQLite启用时返回sqlite_curated/fragment/case:编号及原文定位，否则返回knowledge/文件#起-止。',
+        description: '检索本地磨床维修笔记。液压、润滑、主轴、进给、冷却都按机械检索。只有电路、电气、PLC、LAD 会说明没有该领域；其他未知 domain 忽略。SQLite启用时返回sqlite_curated/fragment/case:编号及原文定位，否则返回knowledge/文件#起-止。',
         schema: z.object({ query: text, subsystem: text, domain: text }).passthrough(),
       },
     ),

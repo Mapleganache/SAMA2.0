@@ -8,6 +8,10 @@ import { resolveConfig } from './config.mjs'
 
 const cases = [
   ['什么是磨床静压轴承', 'simple'],
+  ['关于静压轴承温升过高怎么理解', 'simple'],
+  ['静压轴承温升过高怎么理解', 'simple'],
+  ['最可能的原因是什么', 'complex'],
+  ['导轨爬行的原因是什么', 'complex'],
   ['砂轮动平衡是什么', 'simple'],
   ['外圆磨床砂轮动平衡周期是多少', 'simple'],
   ['导轨怎么日常保养', 'simple'],
