@@ -23,6 +23,7 @@
     .badge.simple { background: #d9f2d9; }
     .card { border: 1px solid #ddd; padding: 12px 14px; margin: 12px 0; }
     .card.winner { border-color: #2e7d32; }
+    .card.second { border-color: #1565c0; }
     .meta { color: #555; font-size: 13px; }
     table { border-collapse: collapse; width: 100%; margin-top: 8px; }
     th, td { border: 1px solid #e4e4e4; padding: 4px 6px; text-align: left; font-size: 13px; }
@@ -37,7 +38,7 @@
 </head>
 <body>
   <h1>SAMA 2.0 磨床维修</h1>
-  <p>缺型号或工况时先提问。信息齐了以后，简单问题直接回答；复杂故障采样多路，只交付综合分最高的一份。 <a href="/report">架构报告</a></p>
+  <p>缺型号或工况时先提问。信息齐了以后，简单问题直接回答；复杂故障采样多路，交付综合分第一名和第二名及评分，由你选择。 <a href="/report">架构报告</a></p>
   <label>API Key</label>
   <input id="apiKey" type="password" placeholder="只保存在这台浏览器里" />
   <div class="row">
@@ -67,6 +68,7 @@
   <label id="questionLabel">故障描述</label>
   <textarea id="question" placeholder="例如：高桥外圆磨主轴发热并且振动，空载，刚开机"></textarea>
   <button id="send" type="button">开始诊断</button>
+  <section id="choices" class="panel" hidden></section>
   <pre id="out">结果会显示在这里。</pre>
   <section id="authorPanel" class="panel" hidden></section>
   <script>
@@ -106,6 +108,8 @@
       button.disabled = true
       out.textContent = '正在诊断…复杂故障会并行请求多次，请稍等。'
       document.getElementById('authorPanel').hidden = true
+      document.getElementById('choices').hidden = true
+      document.getElementById('choices').innerHTML = ''
       try {
         const response = await fetch('/api/ask', {
           method: 'POST',
@@ -119,9 +123,11 @@
         else if (data.ok) session = null
         out.textContent = data.ok ? data.answer : (data.error || '诊断失败')
         showPending(data)
+        renderChoices(data)
         renderAuthor(data)
       } catch (error) {
         out.textContent = error.message || String(error)
+        renderChoices(null)
       } finally {
         button.disabled = false
       }
@@ -147,6 +153,44 @@
       input.focus()
     }
 
+    function renderChoices(data) {
+      const box = document.getElementById('choices')
+      const ranked = data?.ok && (data.route === 'complex' || data.route === 'no_plan') ? (data.judge?.ranked || []) : []
+      const tops = ranked.slice(0, 2)
+      if (!tops.length) {
+        box.hidden = true
+        box.innerHTML = ''
+        return
+      }
+      const plans = new Map((data.plans || []).map((plan) => [plan.id, plan]))
+      const dims = [
+        ['accuracy', '准确性'],
+        ['safety', '安全'],
+        ['feasibility', '可行'],
+        ['completeness', '完整'],
+        ['brevity', '简洁'],
+      ]
+      box.hidden = false
+      box.innerHTML = `<h2>请选择一份方案</h2>
+        <p class="meta">系统按综合分排出前两名，评分只作参考，最终由你决定用哪一份。</p>
+        ${tops.map((row, index) => {
+          const plan = plans.get(row.id)
+          const place = index === 0 ? '第一名 · 推荐' : '第二名'
+          const cls = index === 0 ? 'winner' : 'second'
+          const cells = dims.map((dim) => `<th>${dim[1]}</th>`).join('') + '<th>加权</th>'
+          const values = dims.map((dim) => `<td>${esc(row.scores?.[dim[0]])}</td>`).join('') + `<td>${esc(row.total)}</td>`
+          const layers = row.layers
+            ? `<p class="meta">分层：机理 ${esc(row.layers.mechanism)}/10；措施 ${esc(row.layers.measure)}/10；不确定性 ${esc(row.layers.uncertainty)}/10</p>`
+            : ''
+          return `<article class="card ${cls}">
+            <h2>${esc(place)} · ${esc(row.title)}</h2>
+            <table><tr>${cells}</tr><tr>${values}</tr></table>
+            ${layers}
+            <pre>${esc(plan?.plan || '')}</pre>
+          </article>`
+        }).join('')}`
+    }
+
     function renderAuthor(data) {
       const panel = document.getElementById('authorPanel')
       if (!authorBox.checked || !data || !data.ok) {
@@ -164,7 +208,7 @@
       const accuracy = data.accuracy
       const accuracyBlock = renderAccuracy(accuracy, complex, needInfo)
       const paths = (data.plans || []).length
-        ? data.plans.map((plan) => renderPlan(plan, scores.get(plan.id), accuracyRows.get(plan.id), data.judge?.winnerId)).join('')
+        ? data.plans.map((plan) => renderPlan(plan, scores.get(plan.id), accuracyRows.get(plan.id), data.judge?.winnerId, data.judge?.runnerUpId)).join('')
         : needInfo
           ? '<p>还没有开始写方案。补全上面的问题之后才会采样。</p>'
           : '<p>这是简单问题，没有启动五路方案，也不做准确性专评。</p>'
@@ -185,7 +229,7 @@
       `
     }
 
-    function renderPlan(plan, score, accuracy, winnerId, accuracyId) {
+    function renderPlan(plan, score, accuracy, winnerId, runnerUpId) {
       const dims = [
         ['accuracy', '准确性'],
         ['safety', '安全'],
@@ -200,8 +244,9 @@
       const accuracyLine = accuracy
         ? `<p class="meta">准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。${esc(accuracy.reason || '')}</p>`
         : ''
-      return `<article class="card ${plan.id === winnerId ? 'winner' : ''}">
-        <h2>${esc(plan.title)} ${plan.id === winnerId ? '· 中选' : ''}</h2>
+      const place = plan.id === winnerId ? ' · 第一名' : plan.id === runnerUpId ? ' · 第二名' : ''
+      return `<article class="card ${plan.id === winnerId ? 'winner' : plan.id === runnerUpId ? 'second' : ''}">
+        <h2>${esc(plan.title)}${place}</h2>
         <p class="meta">${esc(plan.id)} · ${esc(plan.status)} · ${esc(plan.stepCount)} 轮${plan.stopReason ? ' · ' + esc(plan.stopReason) : ''}${trace ? ' · ' + esc(trace) : ''}</p>
         ${scoreLine}
         ${accuracyLine}
@@ -243,7 +288,7 @@
       if (!complex) return '<h2>准确性</h2><p>简单问题不进入准确性专评。</p>'
       if (accuracy?.accuracy == null) return `<h2>准确性</h2><p>${esc(accuracy?.note || '审计未完成。选定方案不变。')}</p>`
       return `<h2>准确性</h2>
-        <p>只审计中选方案 ${esc(accuracy.title || '')}：准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
+        <p>只审计第一名 ${esc(accuracy.title || '')}：准确性 ${esc(accuracy.accuracy)}/10，可信度 ${esc(accuracy.credibility)}/10。</p>
         <p>${esc(accuracy.reason || '')}</p>`
     }
 

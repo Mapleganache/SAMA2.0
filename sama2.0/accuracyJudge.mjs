@@ -53,7 +53,7 @@ export function formatAudit(review) {
   const layerLine = layers
     ? `\n分层：机理 ${layers.mechanism}/10；具体措施 ${layers.measure}/10；不确定性表达 ${layers.uncertainty}/10`
     : ''
-  return `\n\n### 审计附录\n准确性 ${review.accuracy}/10，可信度 ${review.credibility}/10。${layerLine}\n${review.reason || '未写理由'}${review.note ? `\n${review.note}` : ''}`
+  return `\n\n### 审计附录（针对第一名）\n准确性 ${review.accuracy}/10，可信度 ${review.credibility}/10。${layerLine}\n${review.reason || '未写理由'}${review.note ? `\n${review.note}` : ''}`
 }
 
 function auditLayers(row, plan, accuracy, credibility) {

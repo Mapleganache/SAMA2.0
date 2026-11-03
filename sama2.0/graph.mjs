@@ -245,7 +245,7 @@ async function verifyNode(state) {
   const winnerPlan = plans.find((plan) => plan.id === judged.winner?.id)
   const winnerNotes = (winnerPlan?.notes || []).map((note) => note.observation).join('\n')
   const banner = winnerPlan && !hasCaseEvidence(winnerNotes) ? `${NO_CASE_BANNER}\n\n` : ''
-  const answer = `${assumptionLine}（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，只交付综合分选出的一份：${complexity.reason}）\n\n${banner}${judged.answer}${pending}`
+  const answer = `${assumptionLine}（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，交付综合分前两名供选择：${complexity.reason}）\n\n${banner}${judged.answer}${pending}`
   const result = pack({
     route: judged.winner ? 'complex' : 'no_plan',
     answer,

@@ -173,7 +173,18 @@ check('五路提示没有指定分析角度', calls.filter((call) => call.system
 const sub1Notes = calls.filter((call) => call.system.includes('第1路独立求解') && !call.user.includes('（还没有）'))
 const sub2Notes = calls.filter((call) => call.system.includes('第2路独立求解') && !call.user.includes('（还没有）'))
 check('子代理之间看不到对方记录', sub1Notes.length > 0 && sub1Notes.every((call) => !call.user.includes('第2路')) && sub2Notes.every((call) => !call.user.includes('第1路')))
-check('只交付综合分最高的一份', complex.judge?.winnerId === 'sub1' && complex.accuracy?.bestId === 'sub1' && complex.answer.includes('第2路的完整维修方案') && complex.answer.includes('评分汇总') && !complex.answer.includes('两项分别保留'))
+check(
+  '交付综合分前两名及评分',
+  complex.judge?.winnerId === 'sub1'
+    && complex.judge?.runnerUpId === 'sub2'
+    && complex.accuracy?.bestId === 'sub1'
+    && complex.answer.includes('第2路的完整维修方案')
+    && complex.answer.includes('第3路的完整维修方案')
+    && complex.answer.includes('第一名')
+    && complex.answer.includes('第二名')
+    && complex.answer.includes('评分对照')
+    && /加权[\s\S]*\/ 10/.test(complex.answer),
+)
 check('审计附在中选方案后面', complex.accuracy?.accuracy === 5 && complex.accuracy?.credibility === 7 && complex.answer.includes('审计附录'))
 check('无本机案例时标明待验证主方向', complex.answer.includes('本地无') || (complex.plans || []).some((plan) => (plan.trace || []).some((step) => String(step.observation || '').includes('sqlite_'))))
 check('复杂题写下检索树', complex.plans.every((plan) => (plan.trace || []).some((step) => step.reason === 'retrieval_tree')))

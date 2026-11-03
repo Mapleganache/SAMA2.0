@@ -276,9 +276,9 @@ export function flowFor(facts, complexity, plans, judged) {
       stage: 'Judge',
       title: '加权评判',
       detail: judged.judge?.winner
-        ? `中选 ${judged.judge.winner.title}，加权 ${judged.judge.winner.total}/10。`
+        ? `第一名 ${judged.judge.winner.title}（${judged.judge.winner.total}/10）${judged.judge.ranked?.[1] ? `；第二名 ${judged.judge.ranked[1].title}（${judged.judge.ranked[1].total}/10）` : ''}。`
         : (judged.judge?.note || '没有可交付方案'),
-      next: '准确性只审计这一份，不改名次',
+      next: '交付前两名供选择；准确性只审计第一名，不改名次',
     },
     {
       stage: '审计',
@@ -365,7 +365,9 @@ export function pack(result) {
     judge: result.judge
       ? {
           winnerId: result.judge.winner?.id || '',
+          runnerUpId: result.judge.ranked?.[1]?.id || '',
           total: result.judge.winner?.total ?? null,
+          runnerUpTotal: result.judge.ranked?.[1]?.total ?? null,
           ranked: result.judge.ranked || [],
           note: result.judge.note || '',
           model: result.judge.model || '',

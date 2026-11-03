@@ -125,6 +125,37 @@ function judgeUser(query, rubric, plans) {
   return `原始故障：\n${query}\n\n本题评判注意事项：\n${notes || '无'}${checkBlock}\n\n幸存方案：\n${blocks}`
 }
 
+export function pickTopChoices(judgement, plans = []) {
+  return (judgement?.ranked || []).slice(0, 2).map((row, index) => ({
+    place: index + 1,
+    row,
+    plan: plans.find((item) => item.id === row.id) || null,
+  }))
+}
+
+function placeLabel(index) {
+  if (index === 0) return '第一名'
+  if (index === 1) return '第二名'
+  return ''
+}
+
+function formatScoreCard(row) {
+  const dims = DIMENSIONS.map((dim) => `${dim.label} ${row.scores?.[dim.key] ?? '—'}/10`).join('；')
+  const layers = row.layers
+    ? `分层：机理 ${row.layers.mechanism}/10；具体措施 ${row.layers.measure}/10；不确定性表达 ${row.layers.uncertainty}/10`
+    : ''
+  const proc = row.processScore == null ? '' : `过程分 ${row.processScore}/2（0 无支撑，1 近邻，2 直接 SUPPORT）`
+  return [`分项：${dims}`, `加权 ${row.total} / 10`, layers, proc].filter(Boolean).join('\n')
+}
+
+function formatChoiceBlock(choice) {
+  const title = choice.place === 1 ? '第一名（推荐）' : '第二名'
+  return `### ${title}：${choice.row.title}（${choice.row.total} / 10）
+${formatScoreCard(choice.row)}
+
+${choice.plan?.plan || ''}`
+}
+
 export function formatJudgement(plans, judgement, rejected = []) {
   if (!judgement?.winner) {
     const lines = rejected.map((item) => `- ${item.title}：${item.unsupported.join('、') || '没有可核对的成稿'}`)
@@ -144,31 +175,33 @@ export function formatJudgement(plans, judgement, rejected = []) {
 评判模型调用失败，本次没有产生分数，按方案完整度保底交付：${judgement.winner.title}（未评分）。
 ${dropped.length ? `\n未进入候选：\n${dropped.join('\n')}\n` : ''}${judgement.note ? `\n${judgement.note}` : ''}`
   }
-  const winnerPlan = plans.find((plan) => plan.id === judgement.winner.id)
+  const tops = pickTopChoices(judgement, plans)
+  const intro = tops.length >= 2
+    ? '下面给出综合分第一名和第二名，请对照评分自行选择。系统推荐第一名。'
+    : `综合分第一名：${judgement.winner.title}（${judgement.winner.total} / 10）`
   const header = DIMENSIONS.map((dim) => dim.label).join(' | ')
-  const lines = judgement.ranked.map((row) => {
+  const lines = judgement.ranked.map((row, index) => {
     const cells = DIMENSIONS.map((dim) => row.scores[dim.key]).join(' | ')
-    const mark = row.id === judgement.winner.id ? '中选' : ''
-    return `| ${row.title}${mark ? '（中选）' : ''} | ${cells} | ${row.total} |`
+    const place = placeLabel(index)
+    return `| ${place ? `${place} · ` : ''}${row.title} | ${cells} | ${row.total} |`
   })
   const dropped = rejected.map((item) => `- ${item.title}（${item.id}）：${labelUnsupported(item.unsupported)}`)
   const failed = plans
     .filter((plan) => String(plan.plan || '').startsWith('方案生成失败'))
     .map((plan) => `- ${plan.title}（${plan.id}）：方案生成失败`)
-  return `${winnerPlan?.plan || ''}
+  return `${intro}
+
+${tops.map(formatChoiceBlock).join('\n\n---\n\n')}
 
 ---
 
-### 评分汇总
-中选：${judgement.winner.title}（${judgement.winner.total} / 10）
-
+### 评分对照
 | 方案 | ${header} | 加权 |
 | --- | ${DIMENSIONS.map(() => '---').join(' | ')} | --- |
 ${lines.join('\n')}
 
 ### 未进入候选
 ${[...dropped, ...failed].join('\n') || '无'}
-${formatLayers(judgement.winner?.layers)}${formatProcess(judgement.winner)}
 ${judgement.note ? `\n${judgement.note}` : ''}`
 }
 
@@ -209,16 +242,6 @@ export function rankByDirectionalFit(ranked) {
     return String(a.id).localeCompare(String(b.id), 'en')
   })
   return { ranked: sorted, mechanismGated, mechanismFallback }
-}
-
-function formatLayers(layers) {
-  if (!layers) return ''
-  return `\n分层：机理 ${layers.mechanism}/10；具体措施 ${layers.measure}/10；不确定性表达 ${layers.uncertainty}/10`
-}
-
-function formatProcess(winner) {
-  if (winner?.processScore == null) return ''
-  return `\n过程分 ${winner.processScore}/2（0 无支撑，1 近邻，2 直接 SUPPORT）`
 }
 
 function labelUnsupported(items) {
