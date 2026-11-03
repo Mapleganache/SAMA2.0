@@ -52,6 +52,7 @@ export function resolveConfig(options = {}) {
     treePriorBeta: clampUnit(options.treePriorBeta ?? 0.5),
     treeMmrLambda: clampUnit(options.treeMmrLambda ?? 0.5),
     treeEntryRetry: clampInt(options.treeEntryRetry ?? 3, 0, 8),
+    treeEmbed: String(options.treeEmbed || process.env.SAMA2_EMBED || 'hash').toLowerCase() === 'jaccard' ? 'jaccard' : 'hash',
     thetaB: 6,
     seedBase,
     toolLimit: 4,

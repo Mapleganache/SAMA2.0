@@ -25,7 +25,7 @@ check('硬门控仍拦住主轴发热', gateDecision('主轴发热', { mode: 'ha
 check('无机型无现象仍然追问', gateDecision('磨床有问题').action === 'ask')
 check('同一字段问过两次后放行', gateDecision('磨床有问题', { askedCounts: { machine: 2, phenomenon: 2, load: 2, thermal: 2 } }).action === 'sample')
 check('原因题即使缺项也进入采样', gateDecision('最可能的原因是什么').action === 'sample')
-check('无案例编号不算有依据', hasCaseEvidence('本地资料没有命中') === false && NO_CASE_BANNER.includes('候选方向') && NO_CASE_BANNER.includes('本地无该案例资料'))
+check('无案例编号不算有依据', hasCaseEvidence('本地资料没有命中') === false && NO_CASE_BANNER.includes('本地无') && NO_CASE_BANNER.includes('主方向'))
 check('案例编号算有依据', hasCaseEvidence('参考 sqlite_curated:4') === true)
 
 const ready = questionsFor('STUDER 主轴发热，空载，刚开机')

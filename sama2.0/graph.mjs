@@ -1,5 +1,4 @@
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
-import { buildBrief } from './brief.mjs'
 import { resolveConfig } from './config.mjs'
 import { classifyByRules } from './complexity.mjs'
 import { extractFaultFacts } from './facts.mjs'
@@ -121,21 +120,7 @@ async function classifyNode(state) {
 }
 
 async function briefNode(state) {
-  const { query, facts, complexity, config } = state
-  if (!config.briefEnabled) return { brief: null, next: 'sample' }
-  const brief = await buildBrief({
-    query,
-    facts,
-    complexity,
-    timeoutMs: config.llmTimeoutMs,
-  })
-  logEvent('brief', {
-    ok: Boolean(brief.ok),
-    hypotheses: brief.hypotheses?.length || 0,
-    mustCheck: brief.mustCheck?.length || 0,
-    source: brief.source || '',
-  })
-  return { brief, next: 'sample' }
+  return { brief: null, next: 'sample' }
 }
 
 async function sampleNode(state) {
@@ -144,8 +129,9 @@ async function sampleNode(state) {
   const runTool = createToolRunner({ query, facts, allowWeb: config.allowWeb, mtkbUrl: config.mtkbUrl })
   let plans = []
   let waves = 0
+  let usedBrief = brief
   if (complexity.level === 'complex') {
-    plans = await sampleWave({
+    const sampled = await sampleWave({
       query,
       count: config.sampleCount,
       start: 0,
@@ -156,9 +142,13 @@ async function sampleNode(state) {
       wave: ++waves,
       brief,
       assumptions: state.assumptions,
+      facts,
+      complexity,
     })
+    plans = sampled.plans
+    usedBrief = sampled.brief ?? usedBrief
   } else {
-    plans = await sampleWave({
+    const sampled = await sampleWave({
       query,
       count: 1,
       start: 0,
@@ -169,7 +159,11 @@ async function sampleNode(state) {
       wave: ++waves,
       brief,
       assumptions: state.assumptions,
+      facts,
+      complexity,
     })
+    plans = sampled.plans
+    usedBrief = sampled.brief ?? usedBrief
     const asked = collectQuestions(plans)
     if (!asked.questions.length && plans[0] && plans[0].status !== 'failed') {
       const firstGround = checkGrounding(plans[0].plan, evidenceText(plans[0].notes))
@@ -185,10 +179,13 @@ async function sampleNode(state) {
           runTool,
           supplements: sessionQuery.supplements,
           wave: ++waves,
-          brief,
+          brief: usedBrief,
           assumptions: state.assumptions,
+          facts,
+          complexity,
         })
-        plans = plans.concat(rest)
+        plans = plans.concat(rest.plans)
+        usedBrief = rest.brief ?? usedBrief
       }
     }
   }
@@ -224,7 +221,7 @@ async function sampleNode(state) {
       },
     }
   }
-  return { plans, asked, next: 'verify' }
+  return { plans, asked, brief: usedBrief || null, next: 'verify' }
 }
 
 async function verifyNode(state) {
@@ -292,6 +289,7 @@ function publicPlanSafe(plan) {
     stopReason: plan.stopReason || '',
     questions: plan.questions || [],
     briefDeviation: plan.briefDeviation || '',
+    direction: plan.direction || null,
     unsupported: plan.ground?.unsupported || [],
     supervisor: plan.supervisor
       ? {

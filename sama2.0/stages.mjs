@@ -1,5 +1,6 @@
 import { auditWinner, formatAudit } from './accuracyJudge.mjs'
-import { formatBriefForLane } from './brief.mjs'
+import { buildBrief, formatBriefForLane } from './brief.mjs'
+import { decorateTree } from './evidence.mjs'
 import { bumpAskedCounts, renderNeedInfo } from './gaps.mjs'
 import { checkGrounding, evidenceText, hasCaseEvidence, isFailedPlan, NO_CASE_BANNER } from './grounding.mjs'
 import { waveDeadline } from './guard.mjs'
@@ -90,9 +91,9 @@ export function finishNeedInfo({ query, facts, complexity, gap, plans, deferred 
   })
 }
 
-export async function sampleWave({ query, count, start, config, budget, runTool, supplements, wave, brief, assumptions }) {
+export async function sampleWave({ query, count, start, config, budget, runTool, supplements, wave, brief, assumptions, facts, complexity }) {
   if (wave > config.waveCap) {
-    return [blockedWave(start)]
+    return { plans: [blockedWave(start)], brief: brief || null }
   }
   // 用户已经补充过一轮后，不再提供 ask_user，避免反复追问进不了评分。
   const allowAskUser = !(Array.isArray(supplements) && supplements.length)
@@ -106,31 +107,53 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
     mmrLambda: config.treeMmrLambda,
     retry: config.treeEntryRetry,
   })
-  const roles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser })
+  const baseRoles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser })
     .map((role, index) => applyLaneSearch(role, laneEntries[index]?.entryQuery))
-    .map((role) => applyBriefToRole(role, brief))
     .map((role) => applyAssumptions(role, assumptions))
+  const trees = await mapLimit(baseRoles, config.concurrency, async (role, index) => {
+    if (!config.treeEnabled) return null
+    const entry = laneEntries[index] || { entryQuery: query, tau: laneTemperature(config, role.index), entryMode: config.treeEntryMode }
+    const raw = await runSqliteTree({
+      origin: query,
+      firstQuery: entry.entryQuery,
+      beamK: config.treeBeamK,
+      topK: config.treeBeamK || config.treeTopK,
+      gamma: config.treeGamma,
+      hopCost: config.treeHopCost,
+      alpha: config.treeAlpha,
+      retBudget: config.treeRetBudget,
+      hopFuse: config.treeHopFuse,
+      tauLane: entry.tau ?? laneTemperature(config, role.index),
+      entryMode: entry.entryMode || config.treeEntryMode,
+      embedMode: config.treeEmbed,
+    }).catch(() => null)
+    if (!raw) return null
+    return decorateTree(raw, { origin: query, config })
+  })
+  let usedBrief = brief || null
+  if (config.briefEnabled) {
+    const evidence = trees.map((tree) => tree?.text || '').filter(Boolean).join('\n\n')
+    usedBrief = await buildBrief({
+      query,
+      facts,
+      complexity,
+      evidence,
+      timeoutMs: config.llmTimeoutMs,
+    })
+    logEvent('brief', {
+      ok: Boolean(usedBrief?.ok),
+      hypotheses: usedBrief?.hypotheses?.length || 0,
+      mustCheck: usedBrief?.mustCheck?.length || 0,
+      source: usedBrief?.source || '',
+    })
+  }
+  const roles = baseRoles.map((role) => applyBriefToRole(role, usedBrief))
   const startedAt = Date.now()
   const deadline = waveDeadline(startedAt, config.subTimeoutMs, count, config.staggerMs)
-  return mapLimit(roles, config.concurrency, async (role, index) => {
+  const plans = await mapLimit(roles, config.concurrency, async (role, index) => {
     if (index > 0) await wait(index * config.staggerMs)
     const entry = laneEntries[index] || { entryQuery: query, tau: laneTemperature(config, role.index), entryMode: config.treeEntryMode }
     const tauProp = entry.tau ?? laneTemperature(config, role.index)
-    const treeSearch = config.treeEnabled
-      ? await runSqliteTree({
-          origin: query,
-          firstQuery: entry.entryQuery,
-          beamK: config.treeBeamK,
-          topK: config.treeBeamK || config.treeTopK,
-          gamma: config.treeGamma,
-          hopCost: config.treeHopCost,
-          alpha: config.treeAlpha,
-          retBudget: config.treeRetBudget,
-          hopFuse: config.treeHopFuse,
-          tauLane: tauProp,
-          entryMode: entry.entryMode || config.treeEntryMode,
-        }).catch(() => null)
-      : null
     return runReactSub({
       role,
       query,
@@ -148,10 +171,11 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       waveDeadline: deadline,
       supplements,
       allowIncomplete: Boolean(assumptions?.length),
-      treeSearch,
+      treeSearch: trees[index],
       mtkbUrl: config.mtkbUrl,
     })
   })
+  return { plans, brief: usedBrief }
 }
 
 function applyLaneSearch(role, firstQuery) {
@@ -313,6 +337,7 @@ function publicPlan(plan) {
     stopReason: plan.stopReason || '',
     questions: plan.questions || [],
     briefDeviation: plan.briefDeviation || '',
+    direction: plan.direction || null,
     unsupported: plan.ground?.unsupported || [],
     supervisor: plan.supervisor
       ? {

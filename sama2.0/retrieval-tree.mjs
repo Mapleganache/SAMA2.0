@@ -1,7 +1,9 @@
 /**
  * 多跳图扩展检索树：分温 Softmax 入口 → beam 扩展 → ΔG 软停机。
- * 无向量时 prior / s 退回词法与 Jaccard；图邻域来自 BRIDGES + 命中抽词。
+ * s_vec 默认词频稀疏余弦；图邻域来自 BRIDGES + 共现图 + 命中抽词。
  */
+import { resolveScoreVec } from './embed.mjs'
+import { corpusNeighbors, ensureTermGraph, loadTermGraph } from './sama-sqlite/term-graph.mjs'
 
 export const LANE_TEMPS = [0.35, 0.5, 0.85, 1.0, 0.95]
 export const TREE_TOP_K = 3
@@ -31,6 +33,18 @@ const MECHANISM = ['爬行', '导轨', '润滑', '油品', '润滑脂', '添加�
 const ANTI_THERMAL = ['油品', '润滑脂', '导轨', '添加剂', '抗磨', '供油']
 
 const KG = buildStaticKg()
+let termGraph = null
+
+function graph() {
+  if (!termGraph) termGraph = loadTermGraph()
+  return termGraph
+}
+
+export function resetTermGraph(next = null) {
+  termGraph = next
+}
+
+export const TREE_HEADER = 'SQLite全量资料（reference，开发参考；未经维修专家复核）。资料中的条件、历史处理和数值均不是本机结论；缺失不得补造。'
 
 export function laneTemperature(config, index) {
   const list = Array.isArray(config?.laneTemps) && config.laneTemps.length ? config.laneTemps : LANE_TEMPS
@@ -62,26 +76,32 @@ export function jaccard(a, b) {
 
 export function bridgeTerms(query) {
   const text = String(query || '')
-  const found = []
+  const scored = new Map()
   for (const row of BRIDGES) {
-    if (!row.re.test(text)) continue
-    for (const term of row.terms) if (!found.includes(term)) found.push(term)
+    const hit = text.match(row.re)
+    if (!hit) continue
+    for (const term of row.terms) {
+      const score = hit[0].length + term.length
+      scored.set(term, Math.max(scored.get(term) || 0, score))
+    }
   }
-  return found
+  return [...scored.entries()].sort((a, b) => b[1] - a[1]).map(([term]) => term)
 }
 
 export function kgNeighbors(term) {
   const key = String(term || '').trim()
   if (!key) return []
-  const direct = KG.get(key)
-  if (direct?.size) return [...direct]
   const found = new Set()
+  const direct = KG.get(key)
+  if (direct) for (const item of direct) found.add(item)
   for (const [node, nbrs] of KG) {
+    if (node === key) continue
     if (key.includes(node) || node.includes(key)) for (const item of nbrs) found.add(item)
   }
   for (const row of BRIDGES) {
     if (row.re.test(key)) for (const item of row.terms) found.add(item)
   }
+  for (const item of corpusNeighbors(key, graph())) found.add(item)
   found.delete(key)
   return [...found]
 }
@@ -172,13 +192,29 @@ export function pathScore(hopScores, gamma = TREE_GAMMA) {
   return hopScores.reduce((sum, value, index) => sum + Number(value || 0) * gamma ** index, 0)
 }
 
-export function scorePathSet(origin, terms, docs, alpha = TREE_ALPHA) {
+export function scorePathSet(origin, terms, docs, alpha = TREE_ALPHA, scoreVec) {
   const textT = joinQuery([...(terms || []), ...(docs || []).map((doc) => `${doc.title || ''} ${doc.snippet || ''}`)])
-  const sVec = jaccard(origin, textT || joinQuery(terms))
+  const sVec = typeof scoreVec === 'function'
+    ? clamp01(scoreVec(origin, terms, docs))
+    : jaccard(origin, textT || joinQuery(terms))
   const raw = Math.max(0, ...(docs || []).map((doc) => Number(doc.score) || 0), 0)
   const sLex = raw > 0 ? raw / (raw + 5) : sVec * 0.5
   const a = clamp01(alpha)
   return clamp01(a * sVec + (1 - a) * sLex)
+}
+
+/** 扩展增益只看新文档相对问题的最佳相关度，避免整条路径文本把余弦稀释掉。 */
+export function bestDocScore(origin, docs, scoreVec) {
+  return (docs || []).reduce((best, doc) => Math.max(best, scorePathSet(origin, [], [doc], 1, scoreVec)), 0)
+}
+
+export function nextPathScore(origin, currentS, newDocs, scoreVec) {
+  const prev = Number(currentS) || 0
+  const docScore = bestDocScore(origin, newDocs, scoreVec)
+  const S_n = Math.max(prev, docScore)
+  // 机理文档相对题面的余弦常低于种子篇。若 gain 取 S_n-π.S，真实库上仍恒为 0。
+  // ΔG=γ^{n-1}(gain-λ) 不变；gain 改为这一跳新文档自己的相关度。
+  return { docScore, S_n, gain: docScore }
 }
 
 export function nextQueryFromHits(origin, hits) {
@@ -236,6 +272,8 @@ export function runRetrievalTree({
   hopFuse = TREE_HOP_FUSE,
   tauLane = null,
   entryMode = 'softmax',
+  embedMode,
+  scoreVec,
   searchFn,
 } = {}) {
   const t0 = String(firstQuery || origin || '').trim()
@@ -243,6 +281,7 @@ export function runRetrievalTree({
   if (!t0) return emptyTree(t0, { tauLane, entryMode })
 
   const search = searchFn || defaultSearch
+  const vec = typeof scoreVec === 'function' ? scoreVec : resolveScoreVec(embedMode)
   const K = clampBeamK(beamK ?? topK)
   const γ = Number(gamma) > 0 && Number(gamma) <= 1 ? Number(gamma) : TREE_GAMMA
   const λ = Math.max(0, Number(hopCost) || 0)
@@ -252,8 +291,9 @@ export function runRetrievalTree({
   const hardCap = Math.min(fuse, Number(hops) > 0 && Number(hops) < fuse && hops !== TREE_HOPS ? Number(hops) : fuse)
 
   const seedDocs = takeTop(doSearch(search, t0, K, budget, new Set()), K)
-  const seedTerms = splitTerms(t0)
-  const seedS = scorePathSet(x, seedTerms, seedDocs, alpha)
+  const bridge = bridgeTerms(t0)
+  const seedTerms = bridge.length ? bridge.slice(0, 4) : splitTerms(t0)
+  const seedS = scorePathSet(x, seedTerms, seedDocs, alpha, vec)
   let beam = [
     {
       terms: seedTerms.length ? seedTerms : [t0],
@@ -280,15 +320,13 @@ export function runRetrievalTree({
       for (const c of nbrs.slice(0, Math.max(6, K * 2))) {
         const T2 = [...π.terms, c]
         const q2 = joinQuery(T2)
-        if (jaccard(q2, π.lastQuery) >= 0.85) continue
-        const docs2 = uniqueRecords([
-          ...π.docs,
-          ...takeTop(doSearch(search, q2, K, budget, idSet(π.docs)), K),
-        ])
-        if (!docs2.length && !π.docs.length) continue
-        const S_n = scorePathSet(x, T2, docs2, alpha)
-        const gain = Math.max(S_n - π.S, 0)
+        if (!q2 || q2 === π.lastQuery) continue
+        const newDocs = takeTop(doSearch(search, q2, K, budget, idSet(π.docs)), K)
+        if (!newDocs.length) continue
+        const docs2 = uniqueRecords([...π.docs, ...newDocs])
+        const { S_n, gain } = nextPathScore(x, π.S, newDocs, vec)
         const delta = γ ** (n - 1) * (gain - λ)
+        if (delta <= 0) continue
         cands.push({
           terms: T2,
           docs: docs2,
@@ -296,18 +334,15 @@ export function runRetrievalTree({
           G: π.G + delta,
           delta,
           lastQuery: q2,
-          hops: [...π.hops, { query: q2, records: docs2.filter((doc) => !idSet(π.docs).has(doc.id)), S: S_n }],
+          hops: [...π.hops, { query: q2, records: newDocs, S: S_n }],
         })
       }
     }
     if (!cands.length) break
-    const next = diversifyBeam(cands.sort((a, b) => b.S - a.S || b.G - a.G), K)
+    const next = diversifyBeam(cands.sort((a, b) => b.G - a.G || b.S - a.S), K)
     if (!next.length) break
     if (n === 1) hop2Query = next[0]?.lastQuery || ''
     beam = next
-    const bestDelta = Math.max(...beam.map((π) => π.delta))
-    if (bestDelta <= 0) break
-    if (!beam.some((π) => π.hops[π.hops.length - 1]?.records?.length)) break
     n += 1
   }
 
@@ -339,6 +374,8 @@ export function runRetrievalTree({
 
 export async function runSqliteTree(options) {
   const { searchRecords } = await import('./sama-sqlite/library.mjs')
+  const { databaseOptions } = await import('./sama-sqlite/connection.mjs')
+  resetTermGraph(await ensureTermGraph(databaseOptions()?.dbPath))
   return runRetrievalTree({
     ...options,
     searchFn: (query, extra) => {
@@ -511,7 +548,7 @@ function termsFromHits(hits, already) {
 
 function splitTerms(query) {
   return String(query || '')
-    .split(/\s+/)
+    .split(/[\s，,。；;！!？?\n]+/)
     .map((item) => item.trim())
     .filter(Boolean)
 }
@@ -587,6 +624,7 @@ function formatTree({ t0, tauLane, entryMode, path, hops, score, G }) {
   if (!hops?.length) return ''
   const tauText = tauLane == null ? '' : `；路温 ${Number(tauLane).toFixed(2)}`
   const lines = [
+    TREE_HEADER,
     `本路检索树（入口：${t0}；模式 ${entryMode || 'softmax'}；路径 ${joinQuery(path)}；G ${Number(G ?? score).toFixed(3)}${tauText}）。跳数由 ΔG 停机，不是固定两跳。`,
   ]
   hops.forEach((hop, index) => {

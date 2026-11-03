@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {analyzeQuery} from '../sama-sqlite/query-analysis.mjs'
 import {searchRecords,searchLibrary,closeDatabases} from '../sama-sqlite/library.mjs'
 import {checkGrounding} from '../grounding.mjs'
+import {corpusNeighbors, loadTermGraph, TERM_GRAPH_FILE} from '../sama-sqlite/term-graph.mjs'
+import {buildLaneEntries, runSqliteTree} from '../retrieval-tree.mjs'
 
 test.after(()=>closeDatabases())
 const ids=text=>[...text.matchAll(/\[\d+\]\s+(\S+)/g)].map(m=>m[1])
@@ -48,4 +50,57 @@ test('扩展检索继续遵循生产审核、子系统和案例隔离',()=>{
  assert.ok(reviewed.records.every(r=>r.kind==='curated'&&r.data.subsystem==='液压润滑'&&r.data.kind!=='case'))
  const isolated=searchRecords('第八章实例30抱轴',{mode:'reference',excludeKinds:['case']})
  assert.equal(isolated.records.length,0)
+})
+
+test('离线共现图给机理词补上语料邻域',()=>{
+ const graph=loadTermGraph()
+ assert.ok(graph.nodeCount>=20)
+ assert.ok(corpusNeighbors('爬行',graph).includes('导轨'))
+ assert.ok(corpusNeighbors('抱轴',graph).some((term)=>/静压/.test(term)))
+})
+
+test('图谱指纹与库不一致时告警并退回空图',()=>{
+ const warn=console.warn
+ const notes=[]
+ console.warn=(...args)=>notes.push(args.join(' '))
+ try{
+  const empty=loadTermGraph(TERM_GRAPH_FILE, -1)
+  assert.equal(empty.nodeCount,0)
+  assert.match(notes.join('\n'),/term-graph 与当前库不一致/)
+ }finally{console.warn=warn}
+})
+
+test('检索树能沿共现和桥接从粗糙度扩到导轨或爬行',async()=>{
+ const tree=await runSqliteTree({
+  origin:'齿面粗糙度不合格，热机，磨削中',
+  firstQuery:'齿面粗糙度不合格',
+  hopCost:0.05,
+  retBudget:12,
+  beamK:3,
+  embedMode:'hash',
+ })
+ const blob=`${(tree.path||[]).join(' ')} ${tree.hop2Query||''} ${tree.text||''}`
+ assert.match(blob,/爬行|导轨|润滑/)
+ assert.ok(tree.records.some((row)=>String(row.id).startsWith('sqlite_')))
+ assert.ok(tree.score>0)
+})
+
+test('五路分温入口在真实库上走出不同检索树',async()=>{
+ const origin='齿面粗糙度不合格，热机，磨削中'
+ const entries=buildLaneEntries(origin,{count:5,seedBase:1000})
+ const trees=[]
+ for (const entry of entries){
+  trees.push(await runSqliteTree({
+   origin,
+   firstQuery:entry.entryQuery,
+   tauLane:entry.tau,
+   hopCost:0.05,
+   retBudget:8,
+   beamK:3,
+   embedMode:'hash',
+  }))
+ }
+ assert.ok(new Set(trees.map((row)=>row.entryQuery)).size>=3)
+ assert.ok(trees.some((row)=>/爬行|导轨|润滑/.test(`${(row.path||[]).join(' ')} ${row.text||''}`)))
+ assert.ok(trees.every((row)=>row.records.some((hit)=>String(hit.id).startsWith('sqlite_'))||row.score>=0))
 })

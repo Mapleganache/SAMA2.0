@@ -6,11 +6,11 @@ import { callText } from './llm.mjs'
 
 const DEFAULT_EXCLUSION = '不得编造未实测数值'
 
-export async function buildBrief({ query, facts, complexity, timeoutMs }) {
+export async function buildBrief({ query, facts, complexity, timeoutMs, evidence }) {
   try {
     const response = await callText({
       system: briefSystem(),
-      user: briefUser({ query, facts, complexity }),
+      user: briefUser({ query, facts, complexity, evidence }),
       temperature: 0.1,
       timeoutMs,
       maxTokens: 900,
@@ -110,23 +110,28 @@ function emptyBrief(facts, note = '') {
 
 function briefSystem() {
   return `你是磨床故障的主控分析员。你只写分析清单，不写维修步骤，不给结论，不编造数值。
-根据用户原文列出现象、待验证假设、必查项、禁止项和验收口径。
+根据用户原文和已分级的近邻资料列出现象、待验证假设、必查项、禁止项和验收口径。
+假设必须能被近邻资料支撑；不要把热变形、砂轮不平衡、冷却液写成默认假设，除非资料点到它们。
 假设 2 到 4 条；必查项 2 到 5 条；允许列表为空时诚实写空。
 exclusions 必须包含「不得编造未实测数值」。
 只输出 JSON：
 {"phenomena":["发热"],"hypotheses":[{"id":"h1","claim":"一句话假设","checks":["可执行验证"]}],"mustCheck":["必查项"],"exclusions":["不得编造未实测数值"],"acceptance":["验收口径"],"confidence":0.6,"note":""}`
 }
 
-function briefUser({ query, facts, complexity }) {
+function briefUser({ query, facts, complexity, evidence }) {
   const phenomena = (facts?.phenomena || []).join('、') || '未提取'
   const machine = facts?.machine || '未识别'
   const load = facts?.load || '未识别'
   const thermal = facts?.thermal || '未识别'
+  const ev = String(evidence || '').trim()
+  const evBlock = ev
+    ? `\n\n已分级的近邻资料（假设必须从这里来）：\n${ev.slice(0, 1800)}\n`
+    : '\n\n还没有分级资料。不要凭空列出热变形、砂轮、冷却液。\n'
   return `故障原文：
 ${query}
 
 已提取：现象 ${phenomena}；设备 ${machine}；工况 ${load}；热态 ${thermal}。
 复杂度：${complexity?.level || 'unknown'}（${complexity?.reason || ''}）
-
+${evBlock}
 只写假设与验证清单，不要维修步骤，不要数值。`
 }

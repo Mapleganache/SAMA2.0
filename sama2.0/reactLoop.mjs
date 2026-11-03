@@ -5,6 +5,7 @@ import { clip, extractJson } from './json.mjs'
 import { logEvent } from './log.mjs'
 import { callText } from './llm.mjs'
 import { thinkInstruction } from './prompts.mjs'
+import { sanitizeDirection } from './evidence.mjs'
 import { superviseMid } from './supervisor.mjs'
 
 const FAILED = '方案生成失败'
@@ -59,6 +60,7 @@ function createLane(options) {
     questions: [],
     stopReason: '',
     briefDeviation: '',
+    direction: null,
     supervisor: null,
     pendingTool: false,
     decision: null,
@@ -208,6 +210,7 @@ async function modelStep(lane, ctx) {
   if (mustFinish || decision.final || !decision.tool) {
     lane.stopReason = reason || (decision.final ? 'final' : 'no_tool')
     if (decision.briefDeviation) lane.briefDeviation = decision.briefDeviation
+    lane.direction = sanitizeDirection(decision.direction, ctx.treeSearch?.grades)
     if (decision.final) lane.plan = decision.final
     else if (mustFinish) {
       lane.plan = await finishFromNotes(lane, ctx, Math.min(ctx.llmTimeoutMs, left), stepCap ? '达到轮次上限' : '工具次数已满')
@@ -284,6 +287,7 @@ async function toolsStep(lane, ctx) {
 }
 
 async function closeLane(lane, ctx) {
+  if (!lane.direction) lane.direction = sanitizeDirection(null, ctx.treeSearch?.grades)
   if (!lane.plan && lane.status !== 'need_info') {
     lane.status = 'failed'
     lane.plan = FAILED
@@ -369,18 +373,19 @@ function parseDecision(text, mustFinish) {
   const thought = String(obj.thought || '').trim()
   const finalText = String(obj.final || obj.answer || '').trim()
   const briefDeviation = String(obj.brief_deviation || obj.briefDeviation || '').trim()
-  if (mustFinish) return { thought, final: finalText, tool: '', briefDeviation }
-  if (finalText) return { thought, final: finalText, tool: '', briefDeviation }
+  const direction = obj.direction && typeof obj.direction === 'object' ? obj.direction : null
+  if (mustFinish) return { thought, final: finalText, tool: '', briefDeviation, direction }
+  if (finalText) return { thought, final: finalText, tool: '', briefDeviation, direction }
   const tool = String(obj.tool || obj.action || '').trim()
-  if (!tool || tool === 'none' || tool === 'null') return { thought, final: thought, tool: '', briefDeviation }
+  if (!tool || tool === 'none' || tool === 'null') return { thought, final: thought, tool: '', briefDeviation, direction }
   const args = obj.args && typeof obj.args === 'object' ? obj.args : {}
-  return { thought, tool, args, briefDeviation }
+  return { thought, tool, args, briefDeviation, direction }
 }
 
 async function finishFromNotes(state, ctx, llmTimeoutMs, why) {
   try {
     const response = await callText({
-      system: `${ctx.role.system}\n只输出最终维修方案 Markdown，不要 JSON，不要再要工具。`,
+      system: `${ctx.role.system}\n只输出最终维修方案 Markdown，不要 JSON，不要再要工具。主方向必须引用观察里的 sqlite_ 或 obsId，禁止把观察没点到的热变形、砂轮、冷却当主因。`,
       user: `原因：${why}\n问题：${ctx.query}\n已有观察：\n${state.notes.map((note) => note.observation).join('\n---\n') || '无'}`,
       temperature: ctx.tauFinal ?? 0.2,
       seed: ctx.seed,

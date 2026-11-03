@@ -1,9 +1,10 @@
 import { DIMENSIONS } from './config.mjs'
+import { capAccuracy, MECHANISM_THETA } from './evidence.mjs'
 import { clip, extractJson } from './json.mjs'
 import { callText } from './llm.mjs'
 import { logEvent } from './log.mjs'
 import { hasCaseEvidence } from './grounding.mjs'
-import { clampScore, normalizeScores, pickWinner } from './score.mjs'
+import { clampScore, normalizeScores, pickWinner, weightedTotal } from './score.mjs'
 
 export async function safetyOnly({ query, plan, timeoutMs, temperature = 0.1 }) {
   try {
@@ -64,18 +65,24 @@ export async function judgePlans({ query, rubric, plans, timeoutMs, temperature 
     return { ok: false, winner: fallback, ranked: [], fallback: true, note: note || '评判不可用，未产生评分', model }
   }
 
-  const ranked = attachLayers(pickWinner(plans, rows.map(normalizeRow)), plans, rows)
+  const fit = rankByDirectionalFit(attachLayers(pickWinner(plans, rows.map(normalizeRow)), plans, rows))
+  const ranked = fit.ranked
   if (!ranked.length) {
     return { ok: false, winner: null, ranked: [], note: note || '评分结果无法对应到有效方案', model }
   }
   const winner = ranked[0]
+  if (fit.mechanismFallback) {
+    note = [note, '全组机制分低于阈值，按总分保底'].filter(Boolean).join('；')
+  }
   logEvent('judge', {
     winner: winner.id,
     total: winner.total,
     model,
+    mechanismGated: fit.mechanismGated,
+    mechanismFallback: fit.mechanismFallback,
     scores: ranked.map((row) => ({ id: row.id, total: row.total })),
   })
-  return { ok: true, winner, ranked, note, model }
+  return { ok: true, winner, ranked, note, mechanismGated: fit.mechanismGated, mechanismFallback: fit.mechanismFallback, model }
 }
 
 function normalizeRow(row) {
@@ -90,9 +97,11 @@ function judgeSystem() {
   const fields = DIMENSIONS.map((dim) => `${dim.key}（${dim.label}，权重 ${Math.round(dim.weight * 100)}%）`).join('、')
   return `你是磨床维修方案评判员。你只打分，不重写方案，不另起一套维修步骤。
 对每一套方案按 0 到 10 分评估：${fields}。
-安全性看能量隔离、砂轮防护、是否阻止带压带电拆卸。定位准确性看是否对准用户现象且没有编造数值。
+安全性看能量隔离、砂轮防护、是否阻止带压带电拆卸。
+accuracy 方向契合：主方向是否由本路 SUPPORT/NEAR 观察推出来。观察对不上的通识主因（热变形、砂轮、冷却）必须低分。成稿主因没有 obsId 或 sqlite_ id 不能给高分。
+completeness 看主方向的验证步骤是否闭环，不因为列出一长串通用故障清单而加分。
 生成失败的方案每一项都给 0，defect 写失败原因。
-另给三层参考分，不改变加权名次：mechanism 机理是否对准现象，measure 具体措施是否写得可执行，uncertainty 没依据时有没有写成候选方向而不是单一结论。
+另给三层分，其中 mechanism 参与名次：mechanism 机理是否由观察支撑，measure 具体措施是否可执行，uncertainty 没依据时有没有写成待验证主方向而不是单一结论。
 只输出 JSON：
 {"note":"一句总评","scores":[{"id":"sub1","scores":{"accuracy":0,"safety":0,"feasibility":0,"completeness":0,"brevity":0},"layers":{"mechanism":0,"measure":0,"uncertainty":0},"defect":"若不是最优，写一句主要缺陷；最优项 defect 可为空"}]}`
 }
@@ -107,7 +116,10 @@ function judgeUser(query, rubric, plans) {
     }).join('\n\n')
     const stop = plan.stopReason ? `收束：${plan.stopReason}` : ''
     const isolation = plan.supervisor?.isolation_noted ? '成稿写有隔离、断电或砂轮防护。' : '成稿未同时写明隔离、断电和砂轮防护。'
-    return `方案 ${plan.id}（${plan.title}，状态 ${plan.status}）\n${stop}\n${isolation}\n${observations}\n\n成稿：\n${plan.plan}`
+    const direction = plan.direction
+      ? `方向卡：${plan.direction.main_direction || '无'}；支撑 ${((plan.direction.support_obs || []).join('、')) || '无'}；过程分 ${plan.direction.processScore ?? 0}`
+      : '方向卡：无'
+    return `方案 ${plan.id}（${plan.title}，状态 ${plan.status}）\n${stop}\n${isolation}\n${direction}\n${observations}\n\n成稿：\n${plan.plan}`
   }).join('\n\n----\n\n')
   const checkBlock = checklist ? `\n\n${checklist}` : ''
   return `原始故障：\n${query}\n\n本题评判注意事项：\n${notes || '无'}${checkBlock}\n\n幸存方案：\n${blocks}`
@@ -156,7 +168,7 @@ ${lines.join('\n')}
 
 ### 未进入候选
 ${[...dropped, ...failed].join('\n') || '无'}
-${formatLayers(judgement.winner?.layers)}
+${formatLayers(judgement.winner?.layers)}${formatProcess(judgement.winner)}
 ${judgement.note ? `\n${judgement.note}` : ''}`
 }
 
@@ -166,12 +178,17 @@ function attachLayers(ranked, plans, rawRows) {
     const plan = plans.find((item) => item.id === row.id)
     const notes = (plan?.notes || []).map((note) => note.observation).join('\n')
     const given = raw.get(row.id)?.layers || {}
-    const admits = /候选方向|本地无|依据不足|需现场验证/.test(plan?.plan || '')
+    const admits = /待验证主方向|候选方向|本地无|依据不足|需现场验证/.test(plan?.plan || '')
     const cited = hasCaseEvidence(notes)
+    const accuracy = capAccuracy(row.scores.accuracy, plan?.plan, plan?.notes)
+    const scores = { ...row.scores, accuracy }
     return {
       ...row,
+      scores,
+      total: weightedTotal(scores),
+      processScore: Number(plan?.direction?.processScore ?? 0),
       layers: {
-        mechanism: clampScore(given.mechanism ?? row.scores.accuracy),
+        mechanism: clampScore(given.mechanism ?? accuracy),
         measure: clampScore(given.measure ?? row.scores.completeness),
         uncertainty: clampScore(given.uncertainty ?? (admits ? 8 : cited ? 6 : 2)),
       },
@@ -179,9 +196,29 @@ function attachLayers(ranked, plans, rawRows) {
   })
 }
 
+export function rankByDirectionalFit(ranked) {
+  const eligible = ranked.filter((row) => (row.layers?.mechanism ?? 0) >= MECHANISM_THETA)
+  const mechanismFallback = eligible.length === 0 && ranked.length > 0
+  const mechanismGated = eligible.length > 0 && eligible.length < ranked.length
+  const pool = eligible.length ? eligible : ranked
+  const sorted = pool.slice().sort((a, b) => {
+    if (b.total !== a.total) return b.total - a.total
+    if ((b.processScore || 0) !== (a.processScore || 0)) return (b.processScore || 0) - (a.processScore || 0)
+    if (b.scores.safety !== a.scores.safety) return b.scores.safety - a.scores.safety
+    if (b.scores.accuracy !== a.scores.accuracy) return b.scores.accuracy - a.scores.accuracy
+    return String(a.id).localeCompare(String(b.id), 'en')
+  })
+  return { ranked: sorted, mechanismGated, mechanismFallback }
+}
+
 function formatLayers(layers) {
   if (!layers) return ''
   return `\n分层：机理 ${layers.mechanism}/10；具体措施 ${layers.measure}/10；不确定性表达 ${layers.uncertainty}/10`
+}
+
+function formatProcess(winner) {
+  if (winner?.processScore == null) return ''
+  return `\n过程分 ${winner.processScore}/2（0 无支撑，1 近邻，2 直接 SUPPORT）`
 }
 
 function labelUnsupported(items) {

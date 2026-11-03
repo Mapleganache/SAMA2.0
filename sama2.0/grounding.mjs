@@ -1,5 +1,5 @@
 const CASE_ID = /sqlite_(?:curated|fragment|case):\d+|knowledge\/[A-Za-z0-9._-]+#\d+-\d+/
-export const NO_CASE_BANNER = '本地无该案例资料，以下为候选方向，需现场验证，不能当成已确认原因。'
+export const NO_CASE_BANNER = '本地无对得上的本机案例。下面只用近邻资料选一个待验证主方向，不要展开成通用磨床清单。'
 
 export function hasCaseEvidence(text) {
   return CASE_ID.test(String(text || ''))

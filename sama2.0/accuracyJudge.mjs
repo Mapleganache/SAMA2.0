@@ -1,3 +1,4 @@
+import { capAccuracy } from './evidence.mjs'
 import { clip, extractJson } from './json.mjs'
 import { callText } from './llm.mjs'
 import { logEvent } from './log.mjs'
@@ -16,12 +17,13 @@ export async function auditWinner({ query, plan, timeoutMs, temperature = 0.1 })
     })
     const parsed = extractJson(response.content)
     const row = Array.isArray(parsed?.reviews) ? parsed.reviews[0] || {} : parsed || {}
-    const accuracy = normalizeAuditScore(row.accuracy)
+    const rawAccuracy = normalizeAuditScore(row.accuracy)
     const credibility = normalizeAuditScore(row.credibility)
-    if (accuracy == null || credibility == null) {
+    if (rawAccuracy == null || credibility == null) {
       logEvent('accuracy_unusable', { accuracy: row.accuracy, credibility: row.credibility, model: response.model })
       return { ok: false, bestId: plan.id, title: plan.title, accuracy: null, credibility: null, reason: '', note: '审计不可用：未得到 0–10 整数分', ranked: [], model: response.model || '' }
     }
+    const accuracy = capAccuracy(rawAccuracy, plan.plan, plan.notes)
     const review = {
       ok: true,
       bestId: plan.id,
@@ -56,7 +58,7 @@ export function formatAudit(review) {
 
 function auditLayers(row, plan, accuracy, credibility) {
   const given = row?.layers || {}
-  const admits = /候选方向|本地无|依据不足|需现场验证/.test(plan?.plan || '')
+  const admits = /待验证主方向|候选方向|本地无|依据不足|需现场验证/.test(plan?.plan || '')
   return {
     mechanism: clampScore(given.mechanism ?? accuracy),
     measure: clampScore(given.measure ?? credibility),
@@ -66,10 +68,10 @@ function auditLayers(row, plan, accuracy, credibility) {
 
 function accuracySystem() {
   return `你是磨床维修准确性专评。你只审计已经选定的这一份方案，不重写方案，不另起维修步骤，也不给其他方案排名。
-accuracy 准确性：是否对准用户描述的现象，根因是否由这些现象推出来，有没有把用户没提到的故障当成已经确认的主因。
-credibility 可信度：结论有多少能回溯到用户原文，或方案里写明的检查依据。出现没有出处的扭矩、间隙、压力、油压、精度数值就降分。没有实测时，把结论写成待测和排查的，可信度可以高；把猜测写成定论的，可信度要低。
+accuracy 方向契合：主方向是否由本路观察里的 SUPPORT/NEAR 推出来，有没有把观察没点到的热变形、砂轮、冷却当成已经确认的主因。没有 obsId / sqlite_ id 的主因不能给高分。
+credibility 可信度：结论有多少能回溯到用户原文或方案里写明的检查依据。出现没有出处的扭矩、间隙、压力、油压、精度数值就降分。没有实测时，把结论写成待测和排查的，可信度可以高；把猜测写成定论的，可信度要低。
 准确性和可信度都用 0 到 10 的整数打分（不是 0–1 比例），10 表示最好。
-再给三层参考分：mechanism 机理，measure 具体措施，uncertainty 没依据时是否写成候选方向。
+再给三层参考分：mechanism 机理是否由观察支撑，measure 具体措施，uncertainty 没依据时是否写成待验证主方向。
 只输出 JSON：{"accuracy":0,"credibility":0,"layers":{"mechanism":0,"measure":0,"uncertainty":0},"reason":"一句理由"}`
 }
 

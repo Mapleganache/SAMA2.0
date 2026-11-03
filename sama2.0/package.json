@@ -15,6 +15,8 @@
   "scripts": {
     "postinstall": "node scripts/prepare-db.mjs",
     "setup:db": "node scripts/prepare-db.mjs",
+    "build:graph": "node --experimental-sqlite scripts/build-term-graph.mjs",
+    "smoke:lanes": "node --experimental-sqlite scripts/smoke-lanes.mjs",
     "test:db": "node --test tests/database.test.mjs tests/database-flow.test.mjs tests/retrieval.test.mjs",
     "test:core": "node test-rules.mjs && node test-gates.mjs && node test-guard-run.mjs && node test-retrieval-tree.mjs && node test-flow.mjs",
     "test": "npm run test:db && npm run test:core",
