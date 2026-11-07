@@ -37,6 +37,7 @@ const server = http.createServer(async (request, response) => {
         maxStep: body.maxStep,
         session: body.session,
         allowWeb: Boolean(body.allowWeb),
+        webAuto: body.webAuto !== false,
         gateMode: body.gateMode,
       })
       sendJson(response, 200, {

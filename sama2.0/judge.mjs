@@ -213,12 +213,14 @@ function attachLayers(ranked, plans, rawRows) {
     const given = raw.get(row.id)?.layers || {}
     const admits = /待验证主方向|候选方向|本地无|依据不足|需现场验证/.test(plan?.plan || '')
     const cited = hasCaseEvidence(notes)
+    const structuredHit = /类型：案例条目|类型：报警表条目|【结构化条目/.test(notes) ? 1 : 0
     const accuracy = capAccuracy(row.scores.accuracy, plan?.plan, plan?.notes)
     const scores = { ...row.scores, accuracy }
     return {
       ...row,
       scores,
       total: weightedTotal(scores),
+      structuredHit,
       processScore: Number(plan?.direction?.processScore ?? 0),
       layers: {
         mechanism: clampScore(given.mechanism ?? accuracy),
@@ -234,8 +236,10 @@ export function rankByDirectionalFit(ranked) {
   const mechanismFallback = eligible.length === 0 && ranked.length > 0
   const mechanismGated = eligible.length > 0 && eligible.length < ranked.length
   const pool = eligible.length ? eligible : ranked
+  // 命中结构化案例/报警表的方案在同等质量下优先（+0.6 排序加成，不改展示总分）。
+  const rankOf = (row) => Number(row.total || 0) + (row.structuredHit ? 0.6 : 0)
   const sorted = pool.slice().sort((a, b) => {
-    if (b.total !== a.total) return b.total - a.total
+    if (rankOf(b) !== rankOf(a)) return rankOf(b) - rankOf(a)
     if ((b.processScore || 0) !== (a.processScore || 0)) return (b.processScore || 0) - (a.processScore || 0)
     if (b.scores.safety !== a.scores.safety) return b.scores.safety - a.scores.safety
     if (b.scores.accuracy !== a.scores.accuracy) return b.scores.accuracy - a.scores.accuracy

@@ -24,6 +24,7 @@ const PHENOMENA = [
   ['精度或表面', /精度|超差|烧伤|波纹|粗糙|圆度|密纹|拉毛|划伤/],
   ['运动异常', /爬行|卡滞|不转|停转|抱轴|抱死|咬死|闷车/],
   ['液压润滑', /泄漏|漏油|压力|油压|断油|不上油|乳化|起泡|变质|泡沫/],
+  ['换刀/刀库', /换刀|刀库|刀塔|卡刀|撞刀|刀具|不能到位|不到位|刀位|刀套/],
   ['报警', /报警/],
 ]
 
@@ -111,6 +112,15 @@ export function gateDecision(query, { mode = 'soft', askedCounts = {} } = {}) {
     return { action: 'answer', assumptions: [], pending: [], missing }
   }
   if (!missing.length) return { action: 'sample', assumptions: [], pending: [], missing }
+  // 明确的报警号或案例号属于“查表”请求，不应因缺机型/工况被追问。
+  if (/例\s*\d+|#\s*\d{3,4}\b|ALM\s*\d{2,4}/i.test(String(query || ''))) {
+    const assumptions = []
+    if (missing.includes('machine')) assumptions.push('按报警号/案例号查表，机型未知')
+    if (missing.includes('load')) assumptions.push('未提供工况，按「磨削中」假设')
+    if (missing.includes('thermal')) assumptions.push('未提供冷热态，按「热机」假设')
+    if (missing.includes('phenomenon')) assumptions.push('现象未写清，按报警号或案例内容作答')
+    return { action: 'sample', assumptions, pending: pack.questions, missing }
+  }
   const blocked = missing.filter((id) => (askedCounts[id] || 0) < 2)
   const hardMissing = missing.filter((id) => id === 'machine' || id === 'phenomenon')
   const mustAsk = !cause && (mode === 'hard' || hardMissing.length === 2)

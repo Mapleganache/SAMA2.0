@@ -10,13 +10,14 @@ import { answerSimple } from './mainAgent.mjs'
 import { mapLimit } from './pool.mjs'
 import { buildRoles } from './prompts.mjs'
 import { buildLaneEntries, laneSearchHint, laneTemperature, runSqliteTree } from './retrieval-tree.mjs'
+import { lookupStructured } from './sama-sqlite/library.mjs'
 import { runReactSub } from './reactLoop.mjs'
 import { buildRubric } from './rubric.mjs'
 import { loadLlmSettings } from './settings.mjs'
 import { createToolRunner } from './tools.mjs'
 
 export async function finishSimple({ query, facts, hard, options, config, started }) {
-  const simple = await answerSimple({ query, history: options.history, llmTimeoutMs: config.llmTimeoutMs })
+  const simple = await answerSimple({ query, history: options.history, llmTimeoutMs: config.llmTimeoutMs, allowWeb: config.allowWeb, webAuto: config.webAuto })
   const ground = checkGrounding(simple.text, `${simple.evidence || ''}\n用户原文：\n${query || ''}`)
   const prefix = ground.pass ? '' : `这些扭矩、间隙或压力没有出现在本次资料观察中，不能当作事实：${ground.unsupported.join('、')}。\n\n`
   const banner = hasCaseEvidence(simple.evidence) ? '' : `${NO_CASE_BANNER}\n\n`
@@ -110,8 +111,12 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
   const baseRoles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser })
     .map((role, index) => applyLaneSearch(role, laneEntries[index]?.entryQuery))
     .map((role) => applyAssumptions(role, assumptions))
+  // 报警号/案例号先做确定性查表，结果注入每一路，避免“某一路没查到就整题答偏”。
+  const structured = lookupStructured(query)
+  const structuredGrades = (text) => [...String(text || '').matchAll(/id: sqlite_fragment:(\d+)/g)]
+    .map((match) => ({ id: `sqlite_fragment:${match[1]}`, grade: 'SUPPORT' }))
   const trees = await mapLimit(baseRoles, config.concurrency, async (role, index) => {
-    if (!config.treeEnabled) return null
+    if (!config.treeEnabled) return structured ? { text: structured, query, grades: structuredGrades(structured), records: [] } : null
     const entry = laneEntries[index] || { entryQuery: query, tau: laneTemperature(config, role.index), entryMode: config.treeEntryMode }
     const raw = await runSqliteTree({
       origin: query,
@@ -127,8 +132,13 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       entryMode: entry.entryMode || config.treeEntryMode,
       embedMode: config.treeEmbed,
     }).catch(() => null)
-    if (!raw) return null
-    return decorateTree(raw, { origin: query, config })
+    if (!raw) return structured ? { text: structured, query, grades: structuredGrades(structured), records: [] } : null
+    const decorated = decorateTree(raw, { origin: query, config })
+    if (structured) {
+      decorated.text = `${structured}\n\n${decorated.text || ''}`
+      decorated.grades = [...structuredGrades(structured), ...(decorated.grades || [])]
+    }
+    return decorated
   })
   let usedBrief = brief || null
   if (config.briefEnabled) {
@@ -171,7 +181,7 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       waveDeadline: deadline,
       supplements,
       allowIncomplete: Boolean(assumptions?.length),
-      treeSearch: trees[index],
+      treeSearch: trees[index] || (structured ? { text: structured, query, grades: structuredGrades(structured), records: [] } : null),
       mtkbUrl: config.mtkbUrl,
     })
   })

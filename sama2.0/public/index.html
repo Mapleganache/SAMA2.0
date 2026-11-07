@@ -319,7 +319,7 @@
         </div>
         <div class="field full checks">
           <label><input id="force" type="checkbox" /> 强制走五路方案</label>
-          <label><input id="web" type="checkbox" /> 允许网页搜索</label>
+          <label><input id="web" type="checkbox" /> 允许联网（本地库没命中时自动搜索）</label>
           <label><input id="author" type="checkbox" /> 显示作者视图（流程 / 思考 / 审计）</label>
         </div>
       </div>
@@ -602,6 +602,7 @@
       maxStep: Number($('maxStep').value) || 8,
       forceMultiAgent: $('force').checked,
       allowWeb: $('web').checked,
+      webAuto: true,
       userText: text,
       session
     };

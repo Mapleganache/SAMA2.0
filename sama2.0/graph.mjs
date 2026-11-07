@@ -126,7 +126,7 @@ async function briefNode(state) {
 async function sampleNode(state) {
   const { query, config, facts, complexity, sessionQuery, started, brief } = state
   const budget = createStepBudget(config.sampleCount * config.maxStep)
-  const runTool = createToolRunner({ query, facts, allowWeb: config.allowWeb, mtkbUrl: config.mtkbUrl })
+  const runTool = createToolRunner({ query, facts, allowWeb: config.allowWeb, webAuto: config.webAuto, mtkbUrl: config.mtkbUrl })
   let plans = []
   let waves = 0
   let usedBrief = brief

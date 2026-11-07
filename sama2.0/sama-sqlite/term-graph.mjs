@@ -125,10 +125,12 @@ export async function ensureTermGraph(dbPath, file = TERM_GRAPH_FILE) {
     try {
       db.exec('PRAGMA query_only=ON')
       const fingerprint = graphFingerprint(db)
-      const loaded = loadTermGraph(file, fingerprint)
+      const force = /^(1|true|always|yes)$/i.test(String(process.env.SAMA2_GRAPH_REBUILD || ''))
+      const loaded = force ? { nodeCount: 0 } : loadTermGraph(file, fingerprint)
       if (loaded.nodeCount) return loaded
       const graph = buildTermGraph(db)
       writeTermGraph(graph, file)
+      if (force) console.log('term-graph 已按当前库强制重建')
       return graph
     } finally {
       db.close()

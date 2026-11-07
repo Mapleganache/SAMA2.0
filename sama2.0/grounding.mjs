@@ -2,7 +2,8 @@ const CASE_ID = /sqlite_(?:curated|fragment|case):\d+|knowledge\/[A-Za-z0-9._-]+
 export const NO_CASE_BANNER = '本地无对得上的本机案例。下面只用近邻资料选一个待验证主方向，不要展开成通用磨床清单。'
 
 export function hasCaseEvidence(text) {
-  return CASE_ID.test(String(text || ''))
+  const value = String(text || '')
+  return CASE_ID.test(value) || /类型：案例条目/.test(value)
 }
 
 const SPEC_RE = /(\d+(?:\.\d+)?)\s*(MPa|kPa|bar|Pa|μm|µm|um|mm|N\s*[·.*]\s*m|Nm)/gi
@@ -73,3 +74,4 @@ function missingCitations(plan, evidence, pattern) {
 export function isFailedPlan(plan) {
   return String(plan?.plan || '').startsWith('方案生成失败')
 }
+

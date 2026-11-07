@@ -38,19 +38,24 @@ export async function classifyComplexity(userQuery, { llmTimeoutMs }) {
   }
 }
 
-export async function answerSimple({ query, history, llmTimeoutMs }) {
+export async function answerSimple({ query, history, llmTimeoutMs, allowWeb = false, webAuto = true }) {
   let evidence = ''
   let manual = ''
   let baseline = ''
   try {
     const { createToolRunner } = await import('./tools.mjs')
-    const runTool = createToolRunner()
+    const runTool = createToolRunner({ query, allowWeb, webAuto })
     const found = await Promise.all([
       runTool('search_knowledge', { query }),
       runTool('lookup_baseline', { query }),
     ])
     manual = found[0]
     baseline = found[1]
+    try {
+      const { lookupStructured } = await import('./sama-sqlite/library.mjs')
+      const structured = lookupStructured(query)
+      if (structured) manual = `${structured}\n\n${manual}`
+    } catch {}
     evidence = `知识库：\n${manual}\n\n测点模板：\n${baseline}`
   } catch (error) {
     evidence = `资料检索失败：${error?.message || error}`
