@@ -102,6 +102,11 @@ export function classifyByRules(userQuery) {
   if (isOneShot(text)) {
     return { level: 'simple', reason: '基础保养问题，一句话可以回答，不必分步排查', source: 'hard' }
   }
+  const codeQuery = /(?:OP|MOT|COR|COM|ALM)\s*[-–—]?\s*\d{2,4}|#\s*\d{3,4}|例\s*\d{1,3}/i.test(text)
+  const otherSymptoms = symptomHits(text).filter((id) => id !== 'alarm')
+  if (codeQuery && !asksForCause(text) && otherSymptoms.length === 0 && /是什么|什么意思|含义|怎么处理|如何处理|怎么办|怎么用/.test(text)) {
+    return { level: 'simple', reason: '报警号/案例号含义与处理查询，可一次查表回答', source: 'hard' }
+  }
   return null
 }
 
