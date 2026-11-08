@@ -52,9 +52,13 @@ export async function answerSimple({ query, history, llmTimeoutMs, allowWeb = fa
     manual = found[0]
     baseline = found[1]
     try {
-      const { lookupStructured } = await import('./sama-sqlite/library.mjs')
+      const { lookupStructured, alarmStatus } = await import('./sama-sqlite/library.mjs')
+      const alarm = alarmStatus(query)
+      const directive = alarm.status === 'missing'
+        ? `【强制约束】报警号 ${alarm.code} 在本库报警表中不存在：只能说明“查不到该报警号的条目”，并给通用排查方向；禁止编造或猜测其含义、原因或参数。\n\n`
+        : ''
       const structured = lookupStructured(query)
-      if (structured) manual = `${structured}\n\n${manual}`
+      if (structured || directive) manual = `${directive}${structured ? `${structured}\n\n` : ''}${manual}`
     } catch {}
     evidence = `知识库：\n${manual}\n\n测点模板：\n${baseline}`
   } catch (error) {

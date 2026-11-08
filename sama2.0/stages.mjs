@@ -10,7 +10,7 @@ import { answerSimple } from './mainAgent.mjs'
 import { mapLimit } from './pool.mjs'
 import { buildRoles } from './prompts.mjs'
 import { buildLaneEntries, laneSearchHint, laneTemperature, runSqliteTree } from './retrieval-tree.mjs'
-import { lookupStructured } from './sama-sqlite/library.mjs'
+import { lookupStructured, alarmStatus } from './sama-sqlite/library.mjs'
 import { runReactSub } from './reactLoop.mjs'
 import { buildRubric } from './rubric.mjs'
 import { loadLlmSettings } from './settings.mjs'
@@ -113,10 +113,15 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
     .map((role) => applyAssumptions(role, assumptions))
   // 报警号/案例号先做确定性查表，结果注入每一路，避免“某一路没查到就整题答偏”。
   const structured = lookupStructured(query)
+  const alarm = alarmStatus(query)
+  const alarmDirective = alarm.status === 'missing'
+    ? `【强制约束】报警号 ${alarm.code} 在本库报警表中不存在：只能说明“查不到该报警号的条目”，并给通用排查方向；禁止编造或猜测该报警号的含义、原因或参数。`
+    : ''
+  const injected = [alarmDirective, structured].filter(Boolean).join('\n\n')
   const structuredGrades = (text) => [...String(text || '').matchAll(/id: sqlite_fragment:(\d+)/g)]
     .map((match) => ({ id: `sqlite_fragment:${match[1]}`, grade: 'SUPPORT' }))
   const trees = await mapLimit(baseRoles, config.concurrency, async (role, index) => {
-    if (!config.treeEnabled) return structured ? { text: structured, query, grades: structuredGrades(structured), records: [] } : null
+    if (!config.treeEnabled) return injected ? { text: injected, query, grades: structuredGrades(injected), records: [] } : null
     const entry = laneEntries[index] || { entryQuery: query, tau: laneTemperature(config, role.index), entryMode: config.treeEntryMode }
     const raw = await runSqliteTree({
       origin: query,
@@ -132,11 +137,11 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       entryMode: entry.entryMode || config.treeEntryMode,
       embedMode: config.treeEmbed,
     }).catch(() => null)
-    if (!raw) return structured ? { text: structured, query, grades: structuredGrades(structured), records: [] } : null
+    if (!raw) return injected ? { text: injected, query, grades: structuredGrades(injected), records: [] } : null
     const decorated = decorateTree(raw, { origin: query, config })
-    if (structured) {
-      decorated.text = `${structured}\n\n${decorated.text || ''}`
-      decorated.grades = [...structuredGrades(structured), ...(decorated.grades || [])]
+    if (injected) {
+      decorated.text = `${injected}\n\n${decorated.text || ''}`
+      decorated.grades = [...structuredGrades(injected), ...(decorated.grades || [])]
     }
     return decorated
   })
@@ -181,7 +186,7 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       waveDeadline: deadline,
       supplements,
       allowIncomplete: Boolean(assumptions?.length),
-      treeSearch: trees[index] || (structured ? { text: structured, query, grades: structuredGrades(structured), records: [] } : null),
+      treeSearch: trees[index] || (injected ? { text: injected, query, grades: structuredGrades(injected), records: [] } : null),
       mtkbUrl: config.mtkbUrl,
     })
   })

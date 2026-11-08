@@ -158,6 +158,31 @@ function lookupTerms(text) {
   return [...new Set(out)]
 }
 
+/** 报警号存在性检查：found / missing / none。 */
+export function alarmStatus(query, options = {}) {
+  const text = String(query || '')
+  const m = text.match(/(?:#\s*(\d{3,4}))|(?:(OP|MOT|COR|COM)\s*[-–—]?\s*(\d{2,4}))|(?:ALM\s*(\d{2,4}))/i)
+  if (!m) return { code: '', status: 'none' }
+  const code = m[1] || (m[2] ? `${m[2]}-${m[3]}` : `ALM${m[4]}`)
+  const dbPath = path.resolve(options.dbPath || process.env.SAMA2_SQLITE_PATH || path.join(ROOT, 'data/sama_full.sqlite'))
+  if (!fs.existsSync(dbPath)) return { code, status: 'unknown' }
+  let handle = null
+  try {
+    handle = new DatabaseSync(dbPath, { readOnly: true })
+    let found = null
+    try {
+      found = handle.prepare('select 1 from alarm_codes where code = ? limit 1').get(code)
+    } catch {
+      return { code, status: 'unknown' }
+    }
+    return { code, status: found ? 'found' : 'missing' }
+  } catch {
+    return { code, status: 'unknown' }
+  } finally {
+    try { handle?.close() } catch {}
+  }
+}
+
 export function lookupStructured(query, options = {}) {
   const text = String(query || '')
   const caseNo = text.match(/例\s*(\d{1,3})/)?.[1]
