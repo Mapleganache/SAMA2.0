@@ -1,0 +1,18 @@
+[
+  {
+    "id": "deepseek-flash",
+    "label": "DeepSeek V4.1 Flash",
+    "provider": "deepseek",
+    "baseUrl": "https://api.deepseek.com",
+    "efforts": ["low", "high", "max"],
+    "defaultEffort": "high"
+  },
+  {
+    "id": "deepseek-v4-pro",
+    "label": "DeepSeek V4 Pro",
+    "provider": "deepseek",
+    "baseUrl": "https://api.deepseek.com",
+    "efforts": ["low", "high", "max"],
+    "defaultEffort": "high"
+  }
+]

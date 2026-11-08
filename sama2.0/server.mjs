@@ -22,6 +22,22 @@ const server = http.createServer(async (request, response) => {
     response.end(renderReport(markdown))
     return
   }
+  if (request.method === 'GET' && request.url === '/api/models') {
+    let catalog = []
+    try {
+      catalog = JSON.parse(fs.readFileSync(path.join(root, 'models.json'), 'utf8'))
+    } catch {
+      catalog = []
+    }
+    if (process.env.SAMA2_MODELS) {
+      try {
+        const extra = JSON.parse(process.env.SAMA2_MODELS)
+        if (Array.isArray(extra)) catalog = [...catalog, ...extra]
+      } catch {}
+    }
+    sendJson(response, 200, { ok: true, models: catalog })
+    return
+  }
   if (request.method === 'POST' && request.url === '/api/ask') {
     try {
       const body = await readBody(request)
@@ -30,6 +46,7 @@ const server = http.createServer(async (request, response) => {
         baseUrl: body.baseUrl,
         model: body.model,
         judgeModel: body.judgeModel,
+        effort: body.effort,
       })
       const result = await runSama2({
         userText: body.userText,

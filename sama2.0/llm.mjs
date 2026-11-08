@@ -43,7 +43,10 @@ async function complete({ system, user, temperature, timeoutMs, maxTokens, seed,
     maxTokens,
     timeout: timeoutMs,
     maxRetries: 0,
-    modelKwargs: Number.isFinite(seed) ? { seed } : undefined,
+    modelKwargs: {
+      ...(Number.isFinite(seed) ? { seed } : {}),
+      ...(settings.effort ? { reasoning_effort: settings.effort } : {}),
+    },
     configuration: {
       baseURL: settings.baseUrl,
       fetch: fetchKeepingReasoning,

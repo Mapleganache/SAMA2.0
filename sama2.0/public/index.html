@@ -191,6 +191,11 @@
   }
   #send:disabled { opacity: .45; cursor: default; }
   .composer-foot { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px 0; color: var(--muted); font-size: 12px; }
+  .model-wrap { display: flex; align-items: center; min-width: 0; }
+  .model-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; border: 1px solid var(--line); background: #fff; color: #344054; border-radius: 999px; padding: 3px 9px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .model-chip:hover { border-color: #b9cdfb; color: var(--accent); }
+  .model-chip svg { flex: 0 0 auto; opacity: .6; }
+  #modelState { overflow: hidden; text-overflow: ellipsis; }
 
   /* ---------- placeholder views ---------- */
   .placeholder { max-width: 860px; margin: 40px auto; padding: 0 16px; }
@@ -274,7 +279,12 @@
         </div>
         <div class="composer-foot">
           <span id="footState">Enter 发送 · Shift+Enter 换行</span>
-          <span id="modelState"></span>
+          <span class="model-wrap">
+            <button type="button" class="model-chip" id="modelBtn" title="选择模型与推理等级">
+              <span id="modelState">模型</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
         </div>
       </div>
     </div>
@@ -307,7 +317,20 @@
         </div>
         <div class="field">
           <label for="model">生成模型</label>
-          <input id="model" type="text" value="deepseek-chat" />
+          <select id="model">
+            <option value="deepseek-flash">DeepSeek V4.1 Flash</option>
+            <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+            <option value="__custom">自定义…</option>
+          </select>
+          <input id="modelCustom" type="text" placeholder="自定义模型 ID，例如 kimi-k2" hidden />
+        </div>
+        <div class="field">
+          <label for="effort">推理等级</label>
+          <select id="effort">
+            <option value="low">低 · 快</option>
+            <option value="high" selected>高 · 默认</option>
+            <option value="max">最高 · 慢但更细</option>
+          </select>
         </div>
         <div class="field">
           <label for="judgeModel">评判模型（空则同生成）</label>
@@ -337,8 +360,10 @@
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const fields = ['apiKey', 'baseUrl', 'model', 'judgeModel', 'maxStep'];
-  const DEFAULTS = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', judgeModel: '', maxStep: '8' };
+  const fields = ['apiKey', 'baseUrl', 'model', 'judgeModel', 'maxStep', 'effort'];
+  const DEFAULTS = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', judgeModel: '', maxStep: '8', effort: 'high' };
+  const EFFORT_LABEL = { low: '低', high: '高', max: '最高' };
+  const MODEL_LABEL = new Map([['deepseek-flash', 'DeepSeek V4.1 Flash'], ['deepseek-v4-pro', 'DeepSeek V4 Pro']]);
   const routeText = { simple: '简单问题', complex: '复杂故障', need_info: '需要补充', no_plan: '无可交付方案' };
 
   const chatInner = $('chatInner');
@@ -352,19 +377,54 @@
   let currentView = 'diagnose';
 
   /* ---------------- settings ---------------- */
+  async function loadCatalog() {
+    try {
+      const res = await fetch('/api/models');
+      const data = await res.json();
+      const models = Array.isArray(data.models) ? data.models : [];
+      if (!models.length) return;
+      const select = $('model');
+      const current = localStorage.getItem('sama2-model') || select.value;
+      select.innerHTML = '';
+      for (const model of models) {
+        MODEL_LABEL.set(model.id, model.label || model.id);
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.label || model.id;
+        select.appendChild(option);
+      }
+      const custom = document.createElement('option');
+      custom.value = '__custom';
+      custom.textContent = '自定义…';
+      select.appendChild(custom);
+      select.value = models.some((model) => model.id === current) ? current : (models[0]?.id || '__custom');
+      syncCustom();
+    } catch {}
+  }
+  function currentModel() {
+    return $('model').value === '__custom' ? ($('modelCustom').value.trim() || 'deepseek-flash') : $('model').value;
+  }
+  function syncCustom() {
+    $('modelCustom').hidden = $('model').value !== '__custom';
+    refreshStatus();
+  }
   function loadSettings() {
     for (const id of fields) {
       const saved = localStorage.getItem('sama2-' + id);
       if (saved !== null) $(id).value = saved;
       else if (DEFAULTS[id] !== undefined) $(id).value = DEFAULTS[id];
     }
+    const custom = localStorage.getItem('sama2-modelCustom');
+    if (custom) $('modelCustom').value = custom;
+    if (!$('model').value) $('model').value = 'deepseek-flash';
     $('force').checked = localStorage.getItem('sama2-force') === '1';
     $('web').checked = localStorage.getItem('sama2-web') === '1';
     $('author').checked = localStorage.getItem('sama2-author') === '1';
-    refreshStatus();
+    syncCustom();
   }
   function saveSettings() {
     for (const id of fields) localStorage.setItem('sama2-' + id, $(id).value);
+    localStorage.setItem('sama2-modelCustom', $('modelCustom').value.trim());
     localStorage.setItem('sama2-force', $('force').checked ? '1' : '0');
     localStorage.setItem('sama2-web', $('web').checked ? '1' : '0');
     localStorage.setItem('sama2-author', $('author').checked ? '1' : '0');
@@ -373,20 +433,28 @@
   function refreshStatus() {
     const key = localStorage.getItem('sama2-apiKey') || $('apiKey').value;
     $('keyDot').classList.toggle('on', Boolean(key));
-    $('modelState').textContent = ($('model').value || 'deepseek-chat') + ($('author').checked ? ' · 作者视图' : '');
+    const label = MODEL_LABEL.get(currentModel()) || currentModel();
+    const effort = EFFORT_LABEL[$('effort').value] || '高';
+    $('modelState').textContent = `${label} · 推理${effort}` + ($('author').checked ? ' · 作者视图' : '');
   }
   function openSettings() {
     loadSettings();
     $('settings').showModal();
   }
   $('settingsBtn').onclick = openSettings;
+  $('modelBtn').onclick = openSettings;
   $('closeSettings').onclick = () => $('settings').close();
   $('saveSettings').onclick = () => { saveSettings(); $('settings').close(); };
   $('resetSettings').onclick = () => {
     for (const id of fields) localStorage.removeItem('sama2-' + id);
+    localStorage.removeItem('sama2-modelCustom');
     loadSettings();
   };
-  for (const id of fields) $(id).addEventListener('input', () => { if (id !== 'apiKey') refreshStatus(); });
+  for (const id of fields) {
+    $(id).addEventListener('input', () => { if (id !== 'apiKey') refreshStatus(); });
+    $(id).addEventListener('change', () => { if (id !== 'apiKey') refreshStatus(); });
+  }
+  $('model').addEventListener('change', syncCustom);
   $('author').addEventListener('change', refreshStatus);
 
   /* ---------------- tabs ---------------- */
@@ -597,8 +665,9 @@
     return {
       apiKey: $('apiKey').value,
       baseUrl: $('baseUrl').value,
-      model: $('model').value,
-      judgeModel: $('judgeModel').value,
+      model: currentModel(),
+      judgeModel: $('judgeModel').value || currentModel(),
+      effort: $('effort').value,
       maxStep: Number($('maxStep').value) || 8,
       forceMultiAgent: $('force').checked,
       allowWeb: $('web').checked,
@@ -695,8 +764,10 @@
   };
 
   loadSettings();
+  loadCatalog();
   switchView('diagnose');
 })();
 </script>
 </body>
 </html>
+
