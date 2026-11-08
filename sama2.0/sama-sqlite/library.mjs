@@ -161,12 +161,13 @@ function lookupTerms(text) {
 export function lookupStructured(query, options = {}) {
   const text = String(query || '')
   const caseNo = text.match(/例\s*(\d{1,3})/)?.[1]
-  const codeMatch = text.match(/(?:#\s*(\d{3,4}))|(?:(OP|MOT|COR)\s*[-–—]?\s*(\d{2,4}))|(?:ALM\s*(\d{2,4}))/i)
+  const codeMatch = text.match(/(?:#\s*(\d{3,4}))|(?:(OP|MOT|COR|COM)\s*[-–—]?\s*(\d{2,4}))|(?:ALM\s*(\d{2,4}))/i)
   const code = codeMatch
     ? (codeMatch[1] || (codeMatch[2] ? `${codeMatch[2]}-${codeMatch[3]}` : `ALM${codeMatch[4]}`))
     : ''
+  const paramNo = text.match(/(?:参数|參數|Pr|No\.?)\s*(\d{2,5})/i)?.[1] || ''
   const terms = lookupTerms(text)
-  if (!caseNo && !code && terms.length < 2) return ''
+  if (!caseNo && !code && !paramNo && terms.length < 2) return ''
   const dbPath = path.resolve(options.dbPath || process.env.SAMA2_SQLITE_PATH || path.join(ROOT, 'data/sama_full.sqlite'))
   if (!fs.existsSync(dbPath)) return ''
   let handle = null
@@ -177,8 +178,12 @@ export function lookupStructured(query, options = {}) {
     const pick = handle.prepare(`select f.rowid, f.title, f.kind, b.clean_text, s.title as source_title, f.line_start
       from full_fragments f join content_blobs b on b.sha256=f.content_sha256 join file_sources s on s.id=f.file_id
       where f.kind in ('case_entry','alarm_entry') and (f.title like ? or f.title like ?) limit 4`)
+    const pickParam = handle.prepare(`select f.rowid, f.title, f.kind, b.clean_text, s.title as source_title, f.line_start
+      from full_fragments f join content_blobs b on b.sha256=f.content_sha256 join file_sources s on s.id=f.file_id
+      where f.kind = 'param_entry' and f.title like ? limit 3`)
     if (caseNo) for (const row of pick.all(`%例${caseNo}%`, `%${caseNo}%`)) push(row)
     if (code) for (const row of pick.all(`%${code}%`, `%${code.replace(/-/g, '')}%`)) push(row)
+    if (paramNo) for (const row of pickParam.all(`%参数 ${paramNo} %`)) push(row)
     // 没有编号时，按“现象”在案例条目里做一次受限检索
     if (!rows.size) {
       const list = terms.slice(0, 40)
@@ -197,7 +202,7 @@ export function lookupStructured(query, options = {}) {
     const list = [...rows.values()].slice(0, 3)
     if (!list.length) return ''
     const blocks = list.map((row, index) => {
-      const label = row.kind === 'alarm_entry' ? '报警表条目' : '案例条目（按现象匹配）'
+      const label = row.kind === 'alarm_entry' ? '报警表条目' : row.kind === 'param_entry' ? '参数表条目' : '案例条目（按现象匹配）'
       return `[${index + 1}] ${row.title}\nid: sqlite_fragment:${row.rowid}\n类型：${label}\n${row.clean_text}\n出处：${row.source_title}；页${row.line_start || '?'}。`
     })
     return `【结构化条目（确定性查询，优先采用；不要再说“本地无案例”）】\n\n${blocks.join('\n\n')}`
