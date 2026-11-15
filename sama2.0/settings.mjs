@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
-let runtime = { baseUrl: '', model: '', judgeModel: '', effort: '', apiKey: '' }
+let runtime = { baseUrl: '', model: '', judgeModel: '', apiKey: '' }
 
 export function sama2Root() {
   return ROOT
@@ -14,7 +14,6 @@ export function setRuntimeLlm(partial = {}) {
     baseUrl: String(partial.baseUrl || '').trim(),
     model: String(partial.model || '').trim(),
     judgeModel: String(partial.judgeModel || '').trim(),
-    effort: String(partial.effort || '').trim(),
     apiKey: String(partial.apiKey || '').trim(),
   }
 }
@@ -31,7 +30,5 @@ export function loadLlmSettings() {
   const model = String(runtime.model || process.env.SAMA2_MODEL || saved.model || 'deepseek-chat')
   const judgeModel = String(runtime.judgeModel || process.env.SAMA2_JUDGE_MODEL || saved.judgeModel || '').trim() || model
   const apiKey = String(runtime.apiKey || process.env.SAMA2_API_KEY || saved.apiKey || '').trim()
-  const effort = String(runtime.effort || process.env.SAMA2_EFFORT || saved.effort || 'high').trim()
-  return { baseUrl, model, judgeModel, apiKey, effort }
+  return { baseUrl, model, judgeModel, apiKey }
 }
-

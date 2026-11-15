@@ -127,7 +127,8 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       origin: query,
       firstQuery: entry.entryQuery,
       beamK: config.treeBeamK,
-      topK: config.treeBeamK || config.treeTopK,
+      topK: config.treeTopK || config.treeBeamK,
+      hops: config.treeHops,
       gamma: config.treeGamma,
       hopCost: config.treeHopCost,
       alpha: config.treeAlpha,
@@ -422,3 +423,4 @@ export function pack(result) {
     },
   }
 }
+

@@ -3,42 +3,42 @@ import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runSama2 } from './index.mjs'
-import { setRuntimeLlm } from './settings.mjs'
+import { loadLlmSettings, setRuntimeLlm } from './settings.mjs'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const page = path.join(root, 'public', 'index.html')
 const reportFile = path.join(root, 'SAMA2-架构报告.md')
 const port = Number(process.env.SAMA2_PORT) || 3920
+const staticFiles = new Map([
+  ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
+  ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+])
 
 const server = http.createServer(async (request, response) => {
-  if (request.method === 'GET' && (request.url === '/' || request.url === '/index.html')) {
-    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+  const pathname = String(request.url || '').split('?')[0]
+  if (request.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
     response.end(fs.readFileSync(page))
     return
   }
-  if (request.method === 'GET' && request.url === '/report') {
+  if (request.method === 'GET' && staticFiles.has(pathname)) {
+    const [file, type] = staticFiles.get(pathname)
+    response.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' })
+    response.end(fs.readFileSync(path.join(root, 'public', file)))
+    return
+  }
+  if (request.method === 'GET' && pathname === '/report') {
     const markdown = fs.readFileSync(reportFile, 'utf8')
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     response.end(renderReport(markdown))
     return
   }
-  if (request.method === 'GET' && request.url === '/api/models') {
-    let catalog = []
-    try {
-      catalog = JSON.parse(fs.readFileSync(path.join(root, 'models.json'), 'utf8'))
-    } catch {
-      catalog = []
-    }
-    if (process.env.SAMA2_MODELS) {
-      try {
-        const extra = JSON.parse(process.env.SAMA2_MODELS)
-        if (Array.isArray(extra)) catalog = [...catalog, ...extra]
-      } catch {}
-    }
-    sendJson(response, 200, { ok: true, models: catalog })
+  if (request.method === 'GET' && pathname === '/api/health') {
+    const settings = loadLlmSettings()
+    sendJson(response, 200, { ok: true, configured: Boolean(settings.apiKey), model: settings.model })
     return
   }
-  if (request.method === 'POST' && request.url === '/api/ask') {
+  if (request.method === 'POST' && pathname === '/api/ask') {
     try {
       const body = await readBody(request)
       setRuntimeLlm({
@@ -46,7 +46,6 @@ const server = http.createServer(async (request, response) => {
         baseUrl: body.baseUrl,
         model: body.model,
         judgeModel: body.judgeModel,
-        effort: body.effort,
       })
       const result = await runSama2({
         userText: body.userText,
@@ -190,3 +189,5 @@ function inline(text) {
 function escapeHtml(text) {
   return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
+
+

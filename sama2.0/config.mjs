@@ -43,18 +43,18 @@ export function resolveConfig(options = {}) {
     tauJudge: 0.1,
     laneTemps: [0.35, 0.5, 0.85, 1.0, 0.95],
     treeEnabled,
-    treeHops: 2,
-    treeTopK: 3,
+    treeHops: clampInt(options.treeHops ?? process.env.SAMA2_TREE_HOPS ?? 2, 1, 6),
+    treeTopK: clampInt(options.treeTopK ?? process.env.SAMA2_TREE_TOP_K ?? 3, 1, 10),
     treeBeamK: clampBeamK(options.treeBeamK ?? options.treeTopK ?? Number(process.env.SAMA2_TREE_BEAM_K) ?? 3),
-    treeGamma: 0.6,
-    treeHopCost: Number.isFinite(Number(options.treeHopCost)) ? Math.max(0, Number(options.treeHopCost)) : 0.15,
-    treeAlpha: clampUnit(options.treeAlpha ?? 0.5),
-    treeRetBudget: clampInt(options.treeRetBudget ?? 12, 2, 64),
-    treeHopFuse: clampInt(options.treeHopFuse ?? 16, 2, 32),
+    treeGamma: clampUnit(options.treeGamma ?? process.env.SAMA2_TREE_GAMMA ?? 0.6),
+    treeHopCost: Math.max(0, Number(options.treeHopCost ?? process.env.SAMA2_TREE_HOP_COST ?? 0.15) || 0),
+    treeAlpha: clampUnit(options.treeAlpha ?? process.env.SAMA2_TREE_ALPHA ?? 0.5),
+    treeRetBudget: clampInt(options.treeRetBudget ?? process.env.SAMA2_TREE_RET_BUDGET ?? 12, 2, 64),
+    treeHopFuse: clampInt(options.treeHopFuse ?? process.env.SAMA2_TREE_HOP_FUSE ?? 16, 2, 32),
     treeEntryMode: String(options.treeEntryMode || process.env.SAMA2_TREE_ENTRY || 'softmax').toLowerCase() === 'mmr' ? 'mmr' : 'softmax',
-    treePriorBeta: clampUnit(options.treePriorBeta ?? 0.5),
-    treeMmrLambda: clampUnit(options.treeMmrLambda ?? 0.5),
-    treeEntryRetry: clampInt(options.treeEntryRetry ?? 3, 0, 8),
+    treePriorBeta: clampUnit(options.treePriorBeta ?? process.env.SAMA2_TREE_PRIOR_BETA ?? 0.5),
+    treeMmrLambda: clampUnit(options.treeMmrLambda ?? process.env.SAMA2_TREE_MMR_LAMBDA ?? 0.5),
+    treeEntryRetry: clampInt(options.treeEntryRetry ?? process.env.SAMA2_TREE_ENTRY_RETRY ?? 3, 0, 8),
     treeEmbed: String(options.treeEmbed || process.env.SAMA2_EMBED || 'hash').toLowerCase() === 'jaccard' ? 'jaccard' : 'hash',
     thetaB: 6,
     seedBase,
@@ -89,3 +89,5 @@ function clampBeamK(value) {
   const raw = Number.isFinite(n) && n > 0 ? n : 3
   return allowed.reduce((best, item) => (Math.abs(item - raw) < Math.abs(best - raw) ? item : best))
 }
+
+
