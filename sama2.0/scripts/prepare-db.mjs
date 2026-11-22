@@ -10,7 +10,12 @@ import {pipeline} from 'node:stream/promises'
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 export async function hashFile(file){const h=createHash('sha256');for await(const chunk of fs.createReadStream(file))h.update(chunk);return h.digest('hex')}
 export async function prepareDatabase({appRoot=root}={}){
- const packDir=path.join(appRoot,'database-pack'),manifest=JSON.parse(await fsp.readFile(path.join(packDir,'manifest.json'),'utf8'))
+ const packDir=path.join(appRoot,'database-pack'),manifestPath=path.join(packDir,'manifest.json')
+ if(!fs.existsSync(manifestPath)){
+  console.log('未随代码提供 database-pack，跳过数据库还原。请把 sama_full.sqlite 放到 data/，或设置 SAMA2_SQLITE_PATH。')
+  return null
+ }
+ const manifest=JSON.parse(await fsp.readFile(manifestPath,'utf8'))
  if(manifest.format!=='sama-sqlite-gzip-parts-v1'||!Array.isArray(manifest.parts)||!manifest.parts.length)throw Error('不支持的数据库分片清单')
  if(path.basename(manifest.databaseFile)!==manifest.databaseFile)throw Error('数据库文件名非法')
  const folder=path.join(appRoot,'data'),target=path.join(folder,manifest.databaseFile)

@@ -64,3 +64,6 @@ docs/C盘*.md
 # 文献 PDF 仅本机保留（版权原因），清单入库
 docs/文献-方向契合与证据选路/*.pdf
 docs/文献-方向契合与证据选路/*.PDF
+
+# 数据库分片：代码仓库不再随 Git 分发数据库
+sama2.0/database-pack/
