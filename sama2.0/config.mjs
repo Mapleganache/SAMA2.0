@@ -5,11 +5,11 @@
  */
 
 export const DIMENSIONS = [
-  { key: 'accuracy', label: '故障定位准确性', weight: 0.3 },
-  { key: 'safety', label: '操作安全性', weight: 0.25 },
-  { key: 'feasibility', label: '现场可行性', weight: 0.2 },
-  { key: 'completeness', label: '方案完整性', weight: 0.15 },
-  { key: 'brevity', label: '简洁性', weight: 0.1 },
+  { key: 'accuracy', label: '故障定位准确性', labelEn: 'Fault localization', weight: 0.3 },
+  { key: 'safety', label: '操作安全性', labelEn: 'Safety', weight: 0.25 },
+  { key: 'feasibility', label: '现场可行性', labelEn: 'Field feasibility', weight: 0.2 },
+  { key: 'completeness', label: '方案完整性', labelEn: 'Completeness', weight: 0.15 },
+  { key: 'brevity', label: '简洁性', labelEn: 'Brevity', weight: 0.1 },
 ]
 
 export function resolveConfig(options = {}) {
@@ -28,6 +28,7 @@ export function resolveConfig(options = {}) {
     ? Boolean(options.briefEnabled)
     : /^(1|true|yes)$/i.test(String(process.env.SAMA2_BRIEF ?? '1'))
   const gateMode = String(options.gateMode || process.env.SAMA2_GATE || 'soft').toLowerCase() === 'hard' ? 'hard' : 'soft'
+  const language = String(options.language || process.env.SAMA2_LANGUAGE || 'zh').toLowerCase() === 'en' ? 'en' : 'zh'
   const treeEnabled = options.treeEnabled != null
     ? Boolean(options.treeEnabled)
     : !/^(0|false|no)$/i.test(String(process.env.SAMA2_TREE ?? '1'))
@@ -67,6 +68,7 @@ export function resolveConfig(options = {}) {
     webAuto,
     briefEnabled,
     gateMode,
+    language,
     mtkbUrl: String(options.mtkbUrl || process.env.SAMA2_MTKB_URL || 'http://127.0.0.1:8765'),
   }
 }

@@ -46,15 +46,15 @@ async function intake(state) {
   const hard = classifyByRules(query)
   const base = { config, sessionQuery, query, facts, hard, brief: null }
 
-  const gate = gateDecision(query, { mode: config.gateMode, askedCounts: sessionQuery.askedCounts || {} })
+  const gate = gateDecision(query, { mode: config.gateMode, askedCounts: sessionQuery.askedCounts || {}, language: config.language })
   if (!config.forceMultiAgent && (hard?.level === 'simple' || gate.action === 'answer')) {
     const complexity = hard?.level === 'simple'
       ? hard
-      : { level: 'simple', reason: '这是知识或理解问题，没有故障排查需求', source: 'hard' }
+      : { level: 'simple', reason: config.language === 'en' ? 'Knowledge or understanding question; no fault-troubleshooting need' : '这是知识或理解问题，没有故障排查需求', source: 'hard' }
     return { ...base, complexity, assumptions: [], gatePending: [], next: 'simple' }
   }
 
-  const gap = questionsFor(query)
+  const gap = questionsFor(query, config.language)
   const stillBlocking = gate.missing.some((id) => (sessionQuery.askedCounts?.[id] || 0) < 2)
   if (gate.action === 'ask' || (config.forceMultiAgent && gate.missing.length && stillBlocking)) {
     const complexity = config.forceMultiAgent
@@ -201,7 +201,7 @@ async function sampleNode(state) {
   const needAsk = Boolean(asked.questions.length || plans.some((plan) => plan.supervisor?.missing?.length))
   // 只要有一路写成方案就进入评分；追问附在「待确认问题」。只有谁都没写完才整轮停在补充。
   if (needAsk && finished.length === 0) {
-    const questions = asked.questions.length ? asked.questions : questionsFor(query).questions
+    const questions = asked.questions.length ? asked.questions : questionsFor(query, config.language).questions
     return {
       plans,
       asked,
@@ -210,7 +210,7 @@ async function sampleNode(state) {
         query,
         facts,
         complexity,
-        gap: { missing: questions.map((item) => item.id), questions, fields: questionsFor(query).fields },
+        gap: { missing: questions.map((item) => item.id), questions, fields: questionsFor(query, config.language).fields },
         plans,
         deferred: asked.deferred,
         config,
@@ -235,17 +235,24 @@ async function verifyNode(state) {
     config,
     brief,
   })
+  const english = config.language === 'en'
   const pendingQuestions = pendingLines(state.gatePending, asked?.questions)
   const pending = pendingQuestions.length
-    ? `\n\n### 待确认问题\n${pendingQuestions.map((text, index) => `${index + 1}. ${text}`).join('\n')}`
+    ? `\n\n### ${english ? 'Pending questions' : '待确认问题'}\n${pendingQuestions.map((text, index) => `${index + 1}. ${text}`).join('\n')}`
     : ''
   const assumptionLine = (state.assumptions || []).length
-    ? `（按假设作答：${state.assumptions.join('；')}）\n\n`
+    ? english
+      ? `(Assumptions: ${state.assumptions.join('; ')})\n\n`
+      : `（按假设作答：${state.assumptions.join('；')}）\n\n`
     : ''
   const winnerPlan = plans.find((plan) => plan.id === judged.winner?.id)
   const winnerNotes = (winnerPlan?.notes || []).map((note) => note.observation).join('\n')
-  const banner = winnerPlan && !hasCaseEvidence(winnerNotes) ? `${NO_CASE_BANNER}\n\n` : ''
-  const answer = `${assumptionLine}（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，交付综合分前两名供选择：${complexity.reason}）\n\n${banner}${judged.answer}${pending}`
+  const banner = winnerPlan && !hasCaseEvidence(winnerNotes)
+    ? `${english ? 'No matching local machine case was found. Use the nearest documents only to choose one main direction to verify; do not expand into a generic grinder checklist.' : NO_CASE_BANNER}\n\n`
+    : ''
+  const answer = english
+    ? `${assumptionLine}(${complexity.level === 'boundary' ? 'Boundary case' : 'Complex fault'}; top two plans by weighted score: ${complexity.reason})\n\n${banner}${judged.answer}${pending}`
+    : `${assumptionLine}（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，交付综合分前两名供选择：${complexity.reason}）\n\n${banner}${judged.answer}${pending}`
   const result = pack({
     route: judged.winner ? 'complex' : 'no_plan',
     answer,

@@ -55,6 +55,7 @@ const server = http.createServer(async (request, response) => {
         allowWeb: Boolean(body.allowWeb),
         webAuto: body.webAuto !== false,
         gateMode: body.gateMode,
+        language: body.language === 'en' ? 'en' : 'zh',
       })
       sendJson(response, 200, {
         ok: true,

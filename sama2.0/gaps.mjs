@@ -55,6 +55,25 @@ const QUESTION_COPY = {
   },
 }
 
+const QUESTION_COPY_EN = {
+  machine: {
+    text: 'State the grinder family or model, for example STUDER, Takasago, MIKROSA, centerless, surface, or cylindrical grinder',
+    why: 'Different families have different teardown locations; a cylindrical headstock procedure does not apply to a centerless regulating wheel',
+  },
+  phenomenon: {
+    text: 'Describe at least one symptom, for example heat, vibration, abnormal noise, size error, stick-slip, oil leak, or an alarm code',
+    why: 'Without a symptom there is no way to choose inspection points',
+  },
+  load: {
+    text: 'Does this happen at idle, or while grinding?',
+    why: 'Idle and grinding differ in load, cooling, and wheel condition',
+  },
+  thermal: {
+    text: 'Is this right after a cold start, or after the machine has been running and is hot?',
+    why: 'Cold and hot states lead to different judgments on heat, clearance, and oil film',
+  },
+}
+
 export function textAfterCorrection(text) {
   const raw = String(text || '')
   const mark = '更正为'
@@ -94,25 +113,31 @@ export function missingFields(userQuery) {
   return { fields, missing }
 }
 
-export function questionsFor(userQuery) {
+export function questionsFor(userQuery, language = 'zh') {
+  const english = language === 'en'
   const { fields, missing } = missingFields(userQuery)
   const questions = missing.map((id) => {
-    const copy = QUESTION_COPY[id]
+    const copy = (english ? QUESTION_COPY_EN : QUESTION_COPY)[id]
     let text = copy.text
     if (id === 'load' && fields.load.conflict) {
-      text = `空载和磨削都出现了，请指定这次现象发生在哪一种。原文里同时有「${fields.load.hits.join('」「')}」。`
+      text = english
+        ? `Both idle and grinding appear. Please specify which state this symptom occurred in. The text contains "${fields.load.hits.join('" and "')}".`
+        : `空载和磨削都出现了，请指定这次现象发生在哪一种。原文里同时有「${fields.load.hits.join('」「')}」。`
     }
     if (id === 'thermal' && fields.thermal.conflict) {
-      text = `冷机和热机都出现了，请指定这次现象发生在哪一种。原文里同时有「${fields.thermal.hits.join('」「')}」。`
+      text = english
+        ? `Both cold and hot states appear. Please specify which state this symptom occurred in. The text contains "${fields.thermal.hits.join('" and "')}".`
+        : `冷机和热机都出现了，请指定这次现象发生在哪一种。原文里同时有「${fields.thermal.hits.join('」「')}」。`
     }
     return { id, text, why: copy.why }
   })
   return { fields, missing, questions }
 }
 
-export function gateDecision(query, { mode = 'soft', askedCounts = {} } = {}) {
+export function gateDecision(query, { mode = 'soft', askedCounts = {}, language = 'zh' } = {}) {
+  const english = language === 'en'
   const { missing } = missingFields(query)
-  const pack = questionsFor(query)
+  const pack = questionsFor(query, language)
   const cause = asksForCause(query)
   if (mode !== 'hard' && !cause && isKnowledgeQuery(String(query || '').replace(/\s+/g, ''))) {
     return { action: 'answer', assumptions: [], pending: [], missing }
@@ -121,10 +146,10 @@ export function gateDecision(query, { mode = 'soft', askedCounts = {} } = {}) {
   // 明确的报警号或案例号属于“查表”请求，不应因缺机型/工况被追问。
   if (/例\s*\d+|#\s*\d{3,4}\b|ALM\s*\d{2,4}/i.test(String(query || ''))) {
     const assumptions = []
-    if (missing.includes('machine')) assumptions.push('按报警号/案例号查表，机型未知')
-    if (missing.includes('load')) assumptions.push('未提供工况，按「磨削中」假设')
-    if (missing.includes('thermal')) assumptions.push('未提供冷热态，按「热机」假设')
-    if (missing.includes('phenomenon')) assumptions.push('现象未写清，按报警号或案例内容作答')
+    if (missing.includes('machine')) assumptions.push(english ? 'Alarm/case lookup; machine model unknown' : '按报警号/案例号查表，机型未知')
+    if (missing.includes('load')) assumptions.push(english ? 'Load condition not provided; assume grinding' : '未提供工况，按「磨削中」假设')
+    if (missing.includes('thermal')) assumptions.push(english ? 'Thermal state not provided; assume hot machine' : '未提供冷热态，按「热机」假设')
+    if (missing.includes('phenomenon')) assumptions.push(english ? 'Symptom not fully stated; answer from alarm or case content' : '现象未写清，按报警号或案例内容作答')
     return { action: 'sample', assumptions, pending: pack.questions, missing }
   }
   const blocked = missing.filter((id) => (askedCounts[id] || 0) < 2)
@@ -132,10 +157,10 @@ export function gateDecision(query, { mode = 'soft', askedCounts = {} } = {}) {
   const mustAsk = !cause && (mode === 'hard' || hardMissing.length === 2)
   if (mustAsk && blocked.length) return { action: 'ask', assumptions: [], pending: pack.questions, missing }
   const assumptions = []
-  if (missing.includes('load')) assumptions.push('未提供工况，按「磨削中」假设')
-  if (missing.includes('thermal')) assumptions.push('未提供冷热态，按「热机」假设')
-  if (missing.includes('machine')) assumptions.push('机型未知，不套用其他型号的参数')
-  if (missing.includes('phenomenon')) assumptions.push('现象未写清，只按原文已有描述排查')
+  if (missing.includes('load')) assumptions.push(english ? 'Load condition not provided; assume grinding' : '未提供工况，按「磨削中」假设')
+  if (missing.includes('thermal')) assumptions.push(english ? 'Thermal state not provided; assume hot machine' : '未提供冷热态，按「热机」假设')
+  if (missing.includes('machine')) assumptions.push(english ? 'Machine model unknown; do not transfer parameters from other models' : '机型未知，不套用其他型号的参数')
+  if (missing.includes('phenomenon')) assumptions.push(english ? 'Symptom incomplete; use only what the user wrote' : '现象未写清，只按原文已有描述排查')
   return { action: 'sample', assumptions, pending: pack.questions, missing }
 }
 
@@ -148,14 +173,15 @@ export function bumpAskedCounts(askedCounts, ids) {
   return next
 }
 
-export function renderNeedInfo({ fields, questions }) {
-  const lines = ['还不能给出排查步骤。', '']
+export function renderNeedInfo({ fields, questions }, language = 'zh') {
+  const english = language === 'en'
+  const lines = [english ? 'I cannot give troubleshooting steps yet.' : '还不能给出排查步骤。', '']
   questions.forEach((item, index) => {
     lines.push(`${index + 1}. ${item.text}`)
-    if (item.why) lines.push(`   原因：${item.why}`)
+    if (item.why) lines.push(english ? `   Why: ${item.why}` : `   原因：${item.why}`)
     lines.push('')
   })
-  lines.push(`已经识别：${recognizedLine(fields)}`)
+  lines.push(english ? `Recognized: ${recognizedLine(fields, true)}` : `已经识别：${recognizedLine(fields, false)}`)
   return lines.join('\n').trim()
 }
 
@@ -207,13 +233,13 @@ export function collectQuestions(plans) {
   return { questions: unique.slice(0, 3), deferred: unique.slice(3) }
 }
 
-function recognizedLine(fields) {
+function recognizedLine(fields, english = false) {
   const parts = []
-  if (fields.machine) parts.push(`机床 ${fields.machine}`)
-  if (fields.phenomena?.length) parts.push(`现象 ${fields.phenomena.join('、')}`)
+  if (fields.machine) parts.push(english ? `machine ${fields.machine}` : `机床 ${fields.machine}`)
+  if (fields.phenomena?.length) parts.push(english ? `symptoms ${fields.phenomena.join(', ')}` : `现象 ${fields.phenomena.join('、')}`)
   if (fields.load?.value) parts.push(fields.load.value)
   if (fields.thermal?.value) parts.push(fields.thermal.value)
-  return parts.length ? parts.join('；') : '还没有识别到型号、现象或工况'
+  return parts.length ? parts.join(english ? '; ' : '；') : (english ? 'no model, symptom, or condition recognized' : '还没有识别到型号、现象或工况')
 }
 
 function matchLoad(text) {

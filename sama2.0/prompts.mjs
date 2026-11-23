@@ -16,18 +16,21 @@ const SHARED_SYSTEM = `你是磨床维修求解者。先读本路观察里的【
 引用本地笔记时写下观察里的 knowledge/文件#起-止。引用案例时写下观察里的 chunk id。成稿主因必须带这些 id。
 机型、现象、空载或磨削、冷机或热机已经齐全时，优先直接给排查方案；细节不明就写明假设继续做，不要为了轴承型号、具体转速等再向用户追问。检索结果里若有 alarm_entry（报警号表）或 case_entry（案例），优先按条目作答并引用其 id；报警表里没有的报警号要明说查不到，不要猜。`
 
-export function buildRoles(count, { start = 0, allowWeb = false, allowAskUser = true } = {}) {
+const LANGUAGE_EN = `\nThe user interface is English. Write the entire final plan, headings, causes, steps and warnings in English. Keep citation ids, alarm codes, parameter numbers and file names unchanged. JSON keys must stay exactly as specified.`
+
+export function buildRoles(count, { start = 0, allowWeb = false, allowAskUser = true, language = 'zh' } = {}) {
   const base = allowAskUser ? SHARED_TOOLS : SHARED_TOOLS.filter((name) => name !== 'ask_user')
   const tools = allowWeb ? [...base, 'web_search'] : [...base]
+  const directive = language === 'en' ? LANGUAGE_EN : ''
   return Array.from({ length: count }, (_, offset) => {
     const index = start + offset
     const lane = index + 1
     return {
       id: `sub${index}`,
-      title: `第${lane}路`,
+      title: language === 'en' ? `Lane ${lane}` : `第${lane}路`,
       index,
       tools,
-      system: `${SHARED_SYSTEM}\n这是第${lane}路独立求解，只对自己的判断负责。`,
+      system: `${SHARED_SYSTEM}${directive}\n${language === 'en' ? `This is independent lane ${lane}; only answer for this lane.` : `这是第${lane}路独立求解，只对自己的判断负责。`}`,
     }
   })
 }
@@ -51,11 +54,13 @@ export function toolGuide(toolNames) {
 const DIRECTION_JSON = `"direction":{"main_direction":"从 SUPPORT/NEAR 选出的主方向","support_obs":["sqlite_或obsId"],"from_observation":"一句话","next_check":"下一步要测什么","alternatives":[]}`
 
 export function thinkInstruction({ system, toolNames, mustFinish }) {
+  const english = /user interface is English/i.test(String(system || ''))
+  const finalLang = english ? '\nFinal answer language: English. JSON keys unchanged.' : ''
   if (mustFinish) {
     return `${system}
 你已达到本轮上限，禁止再调用工具。
 先写方向卡，再按方向卡整理完整维修方案。方向卡必须引用观察里的 SUPPORT/NEAR，不能把观察没点到的热变形/砂轮/冷却当主方向。
-只输出 JSON：{"thought":"收束理由",${DIRECTION_JSON},"final":"完整维修方案 Markdown","brief_deviation":"可空，一句话说明与主控分析哪里不一致"}`
+只输出 JSON：{"thought":"收束理由",${DIRECTION_JSON},"final":"完整维修方案 Markdown","brief_deviation":"可空，一句话说明与主控分析哪里不一致"}${finalLang}`
   }
   return `${system}
 你正在独立求解这道磨床故障。先读【可用证据】。可以调用工具，也可以在证据够用时直接给出方案。
@@ -64,6 +69,6 @@ ${toolGuide(toolNames)}
 只输出 JSON，不要多余文字。二选一：
 {"thought":"这一步为什么要查或为什么可以收束","tool":"工具名","args":{}}
 {"thought":"为什么可以收束",${DIRECTION_JSON},"final":"完整维修方案 Markdown","brief_deviation":"可空，一句话说明与主控分析哪里不一致"}
-不要重复调用已经用过且无新信息的同一查询。`
+不要重复调用已经用过且无新信息的同一查询。${finalLang}`
 }
 

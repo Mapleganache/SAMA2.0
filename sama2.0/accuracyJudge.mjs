@@ -45,7 +45,17 @@ export async function auditWinner({ query, plan, timeoutMs, temperature = 0.1 })
   }
 }
 
-export function formatAudit(review) {
+export function formatAudit(review, language = 'zh') {
+  if (language === 'en') {
+    if (!review || review.accuracy == null) {
+      return `\n\n### Audit appendix\n${review?.note || 'Audit not completed'}. The selected plan is unchanged.`
+    }
+    const layers = review.layers
+    const layerLine = layers
+      ? `\nLayers: mechanism ${layers.mechanism}/10; measures ${layers.measure}/10; uncertainty ${layers.uncertainty}/10`
+      : ''
+    return `\n\n### Audit appendix (top plan)\nAccuracy ${review.accuracy}/10; credibility ${review.credibility}/10.${layerLine}\n${review.reason || 'No reason provided'}${review.note ? `\n${review.note}` : ''}`
+  }
   if (!review || review.accuracy == null) {
     return `\n\n### 审计附录\n${review?.note || '审计未完成'}。选定方案不变。`
   }

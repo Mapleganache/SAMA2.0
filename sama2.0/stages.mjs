@@ -17,10 +17,16 @@ import { loadLlmSettings } from './settings.mjs'
 import { createToolRunner } from './tools.mjs'
 
 export async function finishSimple({ query, facts, hard, options, config, started }) {
-  const simple = await answerSimple({ query, history: options.history, llmTimeoutMs: config.llmTimeoutMs, allowWeb: config.allowWeb, webAuto: config.webAuto })
+  const english = config.language === 'en'
+  const simple = await answerSimple({ query, history: options.history, llmTimeoutMs: config.llmTimeoutMs, allowWeb: config.allowWeb, webAuto: config.webAuto, language: config.language })
   const ground = checkGrounding(simple.text, `${simple.evidence || ''}\n用户原文：\n${query || ''}`)
-  const prefix = ground.pass ? '' : `这些扭矩、间隙或压力没有出现在本次资料观察中，不能当作事实：${ground.unsupported.join('、')}。\n\n`
-  const banner = hasCaseEvidence(simple.evidence) ? '' : `${NO_CASE_BANNER}\n\n`
+  const prefix = ground.pass ? '' : english
+    ? `These torque, clearance or pressure values do not appear in the evidence and cannot be stated as facts: ${ground.unsupported.join(', ')}.\n\n`
+    : `这些扭矩、间隙或压力没有出现在本次资料观察中，不能当作事实：${ground.unsupported.join('、')}。\n\n`
+  const noCase = english
+    ? 'No matching local machine case was found. Use the nearest documents only to choose one main direction to verify; do not expand into a generic grinder checklist.'
+    : NO_CASE_BANNER
+  const banner = hasCaseEvidence(simple.evidence) ? '' : `${noCase}\n\n`
   const flow = [
     factStep(facts),
     {
@@ -57,7 +63,7 @@ export async function finishSimple({ query, facts, hard, options, config, starte
 }
 
 export function finishNeedInfo({ query, facts, complexity, gap, plans, deferred = [], config, started, origin, supplements, askedCounts }) {
-  const answer = renderNeedInfo({ fields: { ...gap.fields, phenomena: facts.phenomena, load: { value: facts.load }, thermal: { value: facts.thermal } }, questions: gap.questions })
+  const answer = renderNeedInfo({ fields: { ...gap.fields, phenomena: facts.phenomena, load: { value: facts.load }, thermal: { value: facts.thermal } }, questions: gap.questions }, config.language)
   const keptSupplements = (supplements || []).filter((item) => item.text && item.text !== origin)
   return pack({
     route: 'need_info',
@@ -108,7 +114,7 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
     mmrLambda: config.treeMmrLambda,
     retry: config.treeEntryRetry,
   })
-  const baseRoles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser })
+  const baseRoles = buildRoles(count, { start, allowWeb: config.allowWeb, allowAskUser, language: config.language })
     .map((role, index) => applyLaneSearch(role, laneEntries[index]?.entryQuery))
     .map((role) => applyAssumptions(role, assumptions))
   // 报警号/案例号先做确定性查表，结果注入每一路，避免“某一路没查到就整题答偏”。
@@ -250,10 +256,10 @@ export async function verifyPlans({ query, plans, reportPlans, facts, config, br
   if (!survivors.length) {
     return {
       winner: null,
-      judge: { ok: false, winner: null, ranked: [], note: '没有可交付方案' },
+      judge: { ok: false, winner: null, ranked: [], note: config.language === 'en' ? 'No deliverable plan' : '没有可交付方案' },
       accuracy: null,
       rejected,
-      answer: formatJudgement(plans, { winner: null, ranked: [], note: '' }, rejected),
+      answer: formatJudgement(plans, { winner: null, ranked: [], note: '' }, rejected, config.language),
     }
   }
   const rubric = buildRubric(facts, brief)
@@ -263,13 +269,14 @@ export async function verifyPlans({ query, plans, reportPlans, facts, config, br
     plans: survivors,
     timeoutMs: config.llmTimeoutMs,
     temperature: config.tauJudge,
+    language: config.language,
   })
   const winner = judgement.winner ? survivors.find((plan) => plan.id === judgement.winner.id) : null
   const accuracy = winner
     ? await auditWinner({ query, plan: winner, timeoutMs: config.llmTimeoutMs, temperature: config.tauJudge })
     : null
   if (accuracy) accuracy.bestId = winner.id
-  const answer = `${formatJudgement(reportPlans || plans, judgement, rejected)}${winner ? formatAudit(accuracy) : ''}`
+  const answer = `${formatJudgement(reportPlans || plans, judgement, rejected, config.language)}${winner ? formatAudit(accuracy, config.language) : ''}`
   return { winner, judge: judgement, accuracy, rejected, answer, rubric }
 }
 

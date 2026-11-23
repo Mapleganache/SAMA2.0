@@ -27,7 +27,7 @@ export async function safetyOnly({ query, plan, timeoutMs, temperature = 0.1 }) 
   }
 }
 
-export async function judgePlans({ query, rubric, plans, timeoutMs, temperature = 0.1 }) {
+export async function judgePlans({ query, rubric, plans, timeoutMs, temperature = 0.1, language = 'zh' }) {
   const usable = plans.filter((plan) => plan.status === 'done' && !String(plan.plan || '').startsWith('方案生成失败'))
   if (!usable.length) {
     return { ok: false, winner: null, ranked: [], note: '没有可评判的有效方案', model: '' }
@@ -39,7 +39,7 @@ export async function judgePlans({ query, rubric, plans, timeoutMs, temperature 
   let model = ''
   try {
     const response = await callText({
-      system: judgeSystem(),
+      system: judgeSystem(language),
       user: judgeUser(query, rubric, plans),
       temperature,
       timeoutMs,
@@ -93,8 +93,9 @@ function normalizeRow(row) {
   }
 }
 
-function judgeSystem() {
+function judgeSystem(language = 'zh') {
   const fields = DIMENSIONS.map((dim) => `${dim.key}（${dim.label}，权重 ${Math.round(dim.weight * 100)}%）`).join('、')
+  const english = language === 'en' ? '\nWrite the "note" and "defect" strings in English; keep JSON keys unchanged.' : ''
   return `你是磨床维修方案评判员。你只打分，不重写方案，不另起一套维修步骤。
 对每一套方案按 0 到 10 分评估：${fields}。
 安全性看能量隔离、砂轮防护、是否阻止带压带电拆卸。
@@ -103,7 +104,7 @@ completeness 看主方向的验证步骤是否闭环，不因为列出一长串�
 生成失败的方案每一项都给 0，defect 写失败原因。
 另给三层分，其中 mechanism 参与名次：mechanism 机理是否由观察支撑，measure 具体措施是否可执行，uncertainty 没依据时有没有写成待验证主方向而不是单一结论。
 只输出 JSON：
-{"note":"一句总评","scores":[{"id":"sub1","scores":{"accuracy":0,"safety":0,"feasibility":0,"completeness":0,"brevity":0},"layers":{"mechanism":0,"measure":0,"uncertainty":0},"defect":"若不是最优，写一句主要缺陷；最优项 defect 可为空"}]}`
+{"note":"一句总评","scores":[{"id":"sub1","scores":{"accuracy":0,"safety":0,"feasibility":0,"completeness":0,"brevity":0},"layers":{"mechanism":0,"measure":0,"uncertainty":0},"defect":"若不是最优，写一句主要缺陷；最优项 defect 可为空"}]}${english}`
 }
 
 function judgeUser(query, rubric, plans) {
@@ -156,7 +157,8 @@ ${formatScoreCard(choice.row)}
 ${choice.plan?.plan || ''}`
 }
 
-export function formatJudgement(plans, judgement, rejected = []) {
+export function formatJudgement(plans, judgement, rejected = [], language = 'zh') {
+  if (language === 'en') return formatJudgementEn(plans, judgement, rejected)
   if (!judgement?.winner) {
     const lines = rejected.map((item) => `- ${item.title}：${item.unsupported.join('、') || '没有可核对的成稿'}`)
     const failed = plans
@@ -202,6 +204,58 @@ ${lines.join('\n')}
 
 ### 未进入候选
 ${[...dropped, ...failed].join('\n') || '无'}
+${judgement.note ? `\n${judgement.note}` : ''}`
+}
+
+function formatJudgementEn(plans, judgement, rejected = []) {
+  if (!judgement?.winner) {
+    const lines = rejected.map((item) => `- ${item.title}: ${(item.unsupported || []).join(', ') || 'no reviewable draft'}`)
+    const failed = plans.filter((plan) => String(plan.plan || '').startsWith('方案生成失败')).map((plan) => `- ${plan.title}: generation failed`)
+    return `No deliverable plan in this run.\n\n${[...lines, ...failed].join('\n') || 'No surviving plan.'}`
+  }
+  if (judgement.fallback) {
+    const fallbackPlan = plans.find((plan) => plan.id === judgement.winner.id)
+    const dropped = rejected.map((item) => `- ${item.title} (${item.id}): ${(item.unsupported || []).join(', ') || 'evidence check failed'}`)
+    return `${fallbackPlan?.plan || ''}
+
+---
+
+### Scoring unavailable
+The judge call failed, so no scores were produced. Delivering the most complete draft: ${judgement.winner.title} (unscored).
+${dropped.length ? `\nRejected:\n${dropped.join('\n')}\n` : ''}${judgement.note ? `\n${judgement.note}` : ''}`
+  }
+  const tops = pickTopChoices(judgement, plans)
+  const intro = tops.length >= 2
+    ? 'Top two plans by weighted score are shown below; choose one for your site. The system recommends the first.'
+    : `Top plan: ${judgement.winner.title} (${judgement.winner.total} / 10)`
+  const header = DIMENSIONS.map((dim) => dim.labelEn || dim.label).join(' | ')
+  const lines = judgement.ranked.map((row, index) => {
+    const cells = DIMENSIONS.map((dim) => row.scores[dim.key]).join(' | ')
+    const place = index === 0 ? '1st · ' : index === 1 ? '2nd · ' : ''
+    return `| ${place}${row.title} | ${cells} | ${row.total} |`
+  })
+  const dropped = rejected.map((item) => `- ${item.title} (${item.id}): ${(item.unsupported || []).join(', ') || 'evidence check failed'}`)
+  const failed = plans.filter((plan) => String(plan.plan || '').startsWith('方案生成失败')).map((plan) => `- ${plan.title} (${plan.id}): generation failed`)
+  const cards = tops.map((choice, index) => {
+    const scores = DIMENSIONS.map((dim) => `${dim.labelEn || dim.label} ${choice.row.scores?.[dim.key] ?? '—'}/10`).join('; ')
+    const layers = choice.row.layers
+      ? `\nLayers: mechanism ${choice.row.layers.mechanism}/10; measure ${choice.row.layers.measure}/10; uncertainty ${choice.row.layers.uncertainty}/10`
+      : ''
+    return `### ${index === 0 ? 'Recommended' : 'Alternative'}: ${choice.row.title} (${choice.row.total} / 10)\nScores: ${scores}\nWeighted ${choice.row.total} / 10${layers}\n\n${choice.plan?.plan || ''}`
+  }).join('\n\n---\n\n')
+  return `${intro}
+
+${cards}
+
+---
+
+### Score comparison
+| Plan | ${header} | Weighted |
+| --- | ${DIMENSIONS.map(() => '---').join(' | ')} | --- |
+${lines.join('\n')}
+
+### Rejected
+${[...dropped, ...failed].join('\n') || 'None'}
 ${judgement.note ? `\n${judgement.note}` : ''}`
 }
 

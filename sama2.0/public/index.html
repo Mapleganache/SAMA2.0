@@ -15,17 +15,17 @@
       </div>
       <div class="brand-text">
         <strong>SAMA 2.0</strong>
-        <span>数控机床故障诊断</span>
+        <span data-i18n="brandSub">数控机床故障诊断</span>
       </div>
     </div>
 
     <button id="newChat" class="new-chat">
       <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-      新对话
+      <span data-i18n="newChat">新对话</span>
     </button>
 
     <div class="side-block">
-      <div class="side-label">最近问题</div>
+      <div class="side-label" data-i18n="recent">最近问题</div>
       <div id="history" class="history"></div>
     </div>
 
@@ -36,7 +36,7 @@
       </div>
       <button id="settingsBtn" class="side-btn">
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4z" stroke="currentColor" stroke-width="1.5"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1-2 3.4-.2-.1a1.7 1.7 0 00-1.9.2 1.7 1.7 0 00-.8 1.5v.2h-4v-.2a1.7 1.7 0 00-.8-1.5 1.7 1.7 0 00-1.9-.2l-.2.1-2-3.4.1-.1A1.7 1.7 0 006.6 15a1.7 1.7 0 00-1.5-1H5v-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1 2-3.4.2.1a1.7 1.7 0 001.9-.2 1.7 1.7 0 00.8-1.5V2h4v.2a1.7 1.7 0 00.8 1.5 1.7 1.7 0 001.9.2l.2-.1 2 3.4-.1.1a1.7 1.7 0 00-.3 1.9 1.7 1.7 0 001.5 1h.1v4h-.1a1.7 1.7 0 00-1.5 1z" stroke="currentColor" stroke-width="1.3"/></svg>
-        设置
+        <span data-i18n="settings">设置</span>
       </button>
     </div>
   </aside>
@@ -44,16 +44,17 @@
   <main class="main">
     <header class="topbar">
       <div class="topbar-title">
-        <h1>故障诊断</h1>
-        <p>描述现象，SAMA 会检索资料、对照案例，给出原因与处置。</p>
+        <h1 data-i18n="title">故障诊断</h1>
+        <p data-i18n="subtitle">描述现象，SAMA 会检索资料、对照案例，给出原因与处置。</p>
       </div>
       <div class="topbar-actions">
-        <button id="detailBtn" class="ghost-btn" title="显示/隐藏诊断详情">详情</button>
-        <button id="themeBtn" class="ghost-btn" title="切换主题">
+        <button id="langBtn" class="ghost-btn" title="切换语言 / Switch language">EN</button>
+        <button id="detailBtn" class="ghost-btn" data-i18n-title="detailTitle" title="显示/隐藏诊断详情"><span data-i18n="detail">详情</span></button>
+        <button id="themeBtn" class="ghost-btn" data-i18n-title="themeTitle" title="切换主题">
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           <svg class="icon-moon" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z" stroke="currentColor" stroke-width="1.6"/></svg>
         </button>
-        <a class="ghost-btn" href="/report" target="_blank" rel="noopener">架构报告</a>
+        <a class="ghost-btn" href="/report" target="_blank" rel="noopener"><span data-i18n="report">架构报告</span></a>
       </div>
     </header>
 
@@ -61,13 +62,13 @@
       <div id="welcome" class="welcome">
         <div class="welcome-inner">
           <div class="welcome-kicker">SAMA 2.0</div>
-          <h2>从现象出发，找到可验证的原因</h2>
-          <p>不要只写“坏了”。带上机型、工况、冷热态和报警号，诊断会更准。</p>
+          <h2 data-i18n="welcomeTitle">从现象出发，找到可验证的原因</h2>
+          <p data-i18n="welcomeText">不要只写“坏了”。带上机型、工况、冷热态和报警号，诊断会更准。</p>
           <div class="examples">
-            <button class="example" data-q="高桥外圆磨床，磨削中，热机，主轴发热并且振动，空载时也有轻微异响">主轴发热伴振动</button>
-            <button class="example" data-q="外圆磨床，磨削细长工件，热机，死顶尖处中心孔咬毛、顶尖烧伤">中心孔咬毛</button>
-            <button class="example" data-q="数控磨床，磨削中，热机，加工齿轮时齿面粗糙度始终达不到工艺要求">齿面粗糙度超差</button>
-            <button class="example" data-q="加工中心，换刀时刀库停在半途，刀具不能到位，无报警">刀库换刀中途停止</button>
+            <button class="example" data-example="0" data-q="高桥外圆磨床，磨削中，热机，主轴发热并且振动，空载时也有轻微异响">主轴发热伴振动</button>
+            <button class="example" data-example="1" data-q="外圆磨床，磨削细长工件，热机，死顶尖处中心孔咬毛、顶尖烧伤">中心孔咬毛</button>
+            <button class="example" data-example="2" data-q="数控磨床，磨削中，热机，加工齿轮时齿面粗糙度始终达不到工艺要求">齿面粗糙度超差</button>
+            <button class="example" data-example="3" data-q="加工中心，换刀时刀库停在半途，刀具不能到位，无报警">刀库换刀中途停止</button>
           </div>
         </div>
       </div>
@@ -77,36 +78,36 @@
     <div class="composer-wrap">
       <div id="hint" class="hint" hidden></div>
       <div class="composer">
-        <textarea id="question" rows="1" placeholder="描述故障现象，例如：高桥外圆磨，磨削中，热机，主轴发热并振动"></textarea>
+        <textarea id="question" rows="1" data-i18n-placeholder="placeholder" placeholder="描述故障现象，例如：高桥外圆磨，磨削中，热机，主轴发热并振动"></textarea>
         <div class="composer-bar">
           <div class="composer-toggles">
-            <label class="switch"><input id="web" type="checkbox" /><span>联网兜底</span></label>
-            <label class="switch"><input id="force" type="checkbox" /><span>强制五路</span></label>
+            <label class="switch"><input id="web" type="checkbox" /><span data-i18n="webToggle">联网兜底</span></label>
+            <label class="switch"><input id="force" type="checkbox" /><span data-i18n="forceToggle">强制五路</span></label>
           </div>
           <div class="composer-send">
-            <span id="footState">Enter 发送 · Shift+Enter 换行</span>
-            <button id="send" class="send-btn" title="发送">
+            <span id="footState" data-i18n="footState">Enter 发送 · Shift+Enter 换行</span>
+            <button id="send" class="send-btn" data-i18n-title="sendTitle" title="发送">
               <svg viewBox="0 0 24 24" fill="none"><path d="M4 12l16-8-6 16-2.5-6.5L4 12z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
             </button>
           </div>
         </div>
       </div>
-      <div class="disclaimer">SAMA 给出的是待验证方向，不替代现场安全确认与厂家手册。</div>
+      <div class="disclaimer" data-i18n="disclaimer">SAMA 给出的是待验证方向，不替代现场安全确认与厂家手册。</div>
     </div>
   </main>
 
   <aside class="inspector" id="inspector">
     <div class="inspector-head">
       <div>
-        <strong>诊断详情</strong>
+        <strong data-i18n="inspectorTitle">诊断详情</strong>
         <span id="inspectorState">等待提问</span>
       </div>
-      <button id="inspectorToggle" class="ghost-btn" title="收起/展开">⇥</button>
+      <button id="inspectorToggle" class="ghost-btn" data-i18n-title="collapse" title="收起/展开">⇥</button>
     </div>
     <div id="inspectorBody" class="inspector-body">
       <div class="empty-state">
         <div class="empty-mark">⌁</div>
-        <p>提交问题后，这里会显示：<br/>判定路线、证据、候选方案与评分。</p>
+        <p data-i18n-html="inspectorEmpty">提交问题后，这里会显示：<br/>判定路线、证据、候选方案与评分。</p>
       </div>
     </div>
   </aside>
@@ -116,10 +117,10 @@
   <form method="dialog" class="dialog-card">
     <div class="dialog-head">
       <div>
-        <strong>模型与诊断设置</strong>
-        <span>配置只保存在本机浏览器</span>
+        <strong data-i18n="settingsTitle">模型与诊断设置</strong>
+        <span data-i18n="settingsSub">配置只保存在本机浏览器</span>
       </div>
-      <button class="ghost-btn" value="cancel" title="关闭">✕</button>
+      <button class="ghost-btn" value="cancel" data-i18n-title="close" title="关闭">✕</button>
     </div>
     <div class="dialog-body">
       <label class="field full">
@@ -131,26 +132,26 @@
         <input id="baseUrl" type="text" placeholder="https://api.deepseek.com" />
       </label>
       <label class="field">
-        <span>模型</span>
+        <span data-i18n="model">模型</span>
         <input id="model" type="text" placeholder="deepseek-chat" />
       </label>
       <label class="field">
-        <span>判分模型（可空）</span>
-        <input id="judgeModel" type="text" placeholder="默认同模型" />
+        <span data-i18n="judgeModel">判分模型（可空）</span>
+        <input id="judgeModel" type="text" data-i18n-placeholder="judgePlaceholder" placeholder="默认同模型" />
       </label>
       <label class="field">
-        <span>最大步数</span>
+        <span data-i18n="maxStep">最大步数</span>
         <input id="maxStep" type="number" min="1" max="50" value="8" />
       </label>
       <div class="field full checks">
-        <label><input id="showDetail" type="checkbox" checked /> 显示详细过程（流程 / 各路轨迹）</label>
+        <label><input id="showDetail" type="checkbox" checked /> <span data-i18n="showDetail">显示详细过程（流程 / 各路轨迹）</span></label>
       </div>
     </div>
     <div class="dialog-foot">
-      <button id="resetSettings" type="button" class="ghost-btn">恢复默认</button>
+      <button id="resetSettings" type="button" class="ghost-btn" data-i18n="restore">恢复默认</button>
       <div class="spacer"></div>
-      <button value="cancel" class="ghost-btn">取消</button>
-      <button id="saveSettings" type="button" class="primary-btn">保存</button>
+      <button value="cancel" class="ghost-btn" data-i18n="cancel">取消</button>
+      <button id="saveSettings" type="button" class="primary-btn" data-i18n="save">保存</button>
     </div>
   </form>
 </dialog>
