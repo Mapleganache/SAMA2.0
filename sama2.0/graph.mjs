@@ -236,6 +236,7 @@ async function verifyNode(state) {
     brief,
   })
   const english = config.language === 'en'
+  const localizedComplexity = english ? { ...complexity, reason: reasonEn(complexity.reason) } : complexity
   const pendingQuestions = pendingLines(state.gatePending, asked?.questions)
   const pending = pendingQuestions.length
     ? `\n\n### ${english ? 'Pending questions' : '待确认问题'}\n${pendingQuestions.map((text, index) => `${index + 1}. ${text}`).join('\n')}`
@@ -251,12 +252,12 @@ async function verifyNode(state) {
     ? `${english ? 'No matching local machine case was found. Use the nearest documents only to choose one main direction to verify; do not expand into a generic grinder checklist.' : NO_CASE_BANNER}\n\n`
     : ''
   const answer = english
-    ? `${assumptionLine}(${complexity.level === 'boundary' ? 'Boundary case' : 'Complex fault'}; top two plans by weighted score: ${complexity.reason})\n\n${banner}${judged.answer}${pending}`
-    : `${assumptionLine}（${complexity.level === 'boundary' ? '边界题' : '复杂故障'}，交付综合分前两名供选择：${complexity.reason}）\n\n${banner}${judged.answer}${pending}`
+    ? `${assumptionLine}(${localizedComplexity.level === 'boundary' ? 'Boundary case' : 'Complex fault'}; top two plans by weighted score: ${localizedComplexity.reason})\n\n${banner}${judged.answer}${pending}`
+    : `${assumptionLine}（${localizedComplexity.level === 'boundary' ? '边界题' : '复杂故障'}，交付综合分前两名供选择：${localizedComplexity.reason}）\n\n${banner}${judged.answer}${pending}`
   const result = pack({
     route: judged.winner ? 'complex' : 'no_plan',
     answer,
-    complexity,
+    complexity: localizedComplexity,
     facts,
     assumptions: state.assumptions || [],
     pendingQuestions,
@@ -326,6 +327,19 @@ export const diagnosisGraph = new StateGraph(DiagnosisState)
   .addEdge('need_info', END)
   .addEdge('verify', END)
   .compile()
+
+function reasonEn(value) {
+  const text = String(value || '')
+  if (/耦合/.test(text)) return 'Multiple coupled symptoms require stepwise fault isolation'
+  if (/偶发|间歇/.test(text)) return 'Intermittent fault; do not treat it as a stable reproducible failure'
+  if (/已经做过|简单排查/.test(text)) return 'Simple checks were already done and the problem persists; continue deeper'
+  if (/综合判断/.test(text)) return 'Needs model, operating condition, or repair history to identify the root cause'
+  if (/故障原因/.test(text)) return 'The user asks for a fault cause; compare against evidence instead of giving a dictionary answer'
+  if (/概念|名词/.test(text)) return 'Concept or terminology question; no fault-isolation need'
+  if (/参数|保养周期|备件/.test(text)) return 'Parameter, maintenance interval, or spare-part lookup; one-shot answer'
+  if (/基础保养/.test(text)) return 'Basic maintenance question; one-shot answer'
+  return text || 'Complex fault'
+}
 
 export async function runSama2(options = {}) {
   const output = await diagnosisGraph.invoke({ options, started: Date.now() }, { recursionLimit: 14 })

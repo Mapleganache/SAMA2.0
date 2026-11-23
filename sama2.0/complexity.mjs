@@ -23,12 +23,15 @@ export function asksForCause(text) {
   const compact = String(text || '').replace(/\s+/g, '')
   if (/怎么理解|如何理解|什么原理|工作原理|的原理/.test(compact)) return false
   return /最可能的原因|原因是什么|什么原因|故障原因|怎么造成|怎么会|为什么会|为何会|为何出现/.test(compact)
+    || /mostlikelycause|whatisthecause|whatcaused|rootcause|whydoes|whyis|reasonfor/i.test(compact)
 }
 
 export function isKnowledgeQuery(text) {
   if (asksForCause(text)) return false
   const intent = /怎么理解|如何理解|是什么|为什么|什么原理|的原理|工作原理|区别|注意事项|适用边界|怎么选|如何选择/.test(text)
+    || /whatis|whatdoes|meaningof|difference|principle|howtochoose/i.test(text)
   const action = /怎么办|如何修|怎么修|怎么查|如何排查|排查|怎么处理|如何处理|怎么维修|如何维修/.test(text)
+    || /howtofix|howtorepair|howtocheck|howtotroubleshoot|whatshould|howdoi/i.test(text)
   return intent && !action
 }
 

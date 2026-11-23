@@ -19,6 +19,11 @@ const MACHINE_PATTERNS = [
   /加工中心/,
   /数控铣床|铣床|銑床/,
   /镗床/,
+  /CNC\s+grinder|cylindrical\s+grinder|surface\s+grinder|centerless\s+grinder|internal\s+grinder|universal\s+grinder|grinding\s+machine|grinder/i,
+  /machining\s+center/i,
+  /CNC\s+lathe|lathe/i,
+  /milling\s+machine|milling/i,
+  /boring\s+machine/i,
 ]
 
 const PHENOMENA = [
@@ -32,6 +37,15 @@ const PHENOMENA = [
   ['启动/停机', /不能启动|不启动|启动不了|无法启动|不能起动|起动不了|无法起动|启动困难|突然停机|掉电/],
   ['接刀/平面度', /接刀|平面度|失准|尺寸不稳|尺寸漂移|精度不稳/],
   ['报警', /报警/],
+  ['heat / temperature rise', /heat|overheat|temperature rise|thermal/i],
+  ['vibration / chatter', /vibration|vibrat|chatter|oscillat/i],
+  ['abnormal noise', /abnormal noise|noise|squeal/i],
+  ['accuracy / surface finish', /roughness|surface finish|accuracy|out of tolerance|burn|waviness|roundness|scratch/i],
+  ['motion / sticking', /stick-slip|sticking|jammed|seized|stuck|not rotating|stops? rotating/i],
+  ['hydraulic / lubrication', /hydraulic|oil leak|leakage|lubricat|oil pressure/i],
+  ['tool change / magazine', /tool change|tool magazine|turret|ATC|tool not in position/i],
+  ['start / stop', /will not start|fail(s|ed)? to start|cannot start|shutdown|stopped unexpectedly|power loss/i],
+  ['alarm', /alarm|error code/i],
 ]
 
 const FIELD_ORDER = ['machine', 'phenomenon', 'load', 'thermal']
@@ -87,7 +101,7 @@ export function readFields(userQuery) {
   const compact = text.replace(/\s+/g, '')
   const phenomena = []
   for (const [label, re] of PHENOMENA) {
-    if (re.test(compact)) phenomena.push(label)
+    if (re.test(compact) || re.test(text)) phenomena.push(label)
   }
   let machine = ''
   for (const re of MACHINE_PATTERNS) {
@@ -244,19 +258,20 @@ function recognizedLine(fields, english = false) {
 
 function matchLoad(text) {
   const raw = String(text || '')
-  const idleRes = [/空载/g, /空转/g, /不磨削/g, /未磨削/g, /没在磨/g]
+  const idleRes = [/空载/g, /空转/g, /不磨削/g, /未磨削/g, /没在磨/g, /idle|no load|not grinding|without grinding/gi]
   const idleMatches = []
   let rest = raw
   for (const re of idleRes) {
     for (const m of raw.matchAll(re)) idleMatches.push(m)
     rest = rest.replace(re, '')
   }
-  const grindHit = rest.match(/磨削|在磨|加工中|正在磨|切削/)
+  const grindHit = rest.match(/磨削|在磨|加工中|正在磨|切削|grinding|while grinding|cutting/i)
   const idle = idleMatches.length > 0
   const hits = [...idleMatches.map((m) => m[0]), ...(grindHit ? [grindHit[0]] : [])]
   if (idle && grindHit) {
     // 只有明确说两种工况都出现才算冲突；“空载振动 0.008 mm”这类是测量位置，不是发生工况。
     const explicit = /空载[和与或、]?磨削|磨削[和与或、]?空载|(?:空载|空转)[^，。；]{0,8}(?:都|均)(?:出现|有|会)|(?:都|均)(?:出现|存在)/.test(raw)
+      || /(?:idle|no load)[^,.;]{0,24}(?:grinding)|(?:both|either)[^.]{0,20}(?:idle|grinding)/i.test(raw)
     const measurement = idleMatches.some((m) => {
       const after = raw.slice(m.index + m[0].length, m.index + m[0].length + 12)
       return /(振动|噪声|噪音|电流|温度|温升|读数|实测|测得|值|mm|μm|0\.\d)/.test(after)
@@ -270,8 +285,8 @@ function matchLoad(text) {
 }
 
 function matchThermal(text) {
-  const coldRes = [/冷机/g, /刚开机/g, /温车前/g, /一开机/g]
-  const hotRes = [/热机/g, /运转一段时间/g, /连续加工/g, /磨了一小时/g, /温升后/g]
+  const coldRes = [/冷机/g, /刚开机/g, /温车前/g, /一开机/g, /cold\s+start|cold\s+machine|from\s+cold/i]
+  const hotRes = [/热机/g, /运转一段时间/g, /连续加工/g, /磨了一小时/g, /温升后/g, /hot\s+machine|machine\s+is\s+hot|after\s+(?:running|warming)|continuous\s+machining|\bhot\b/i]
   const raw = String(text || '')
   const coldHits = collect(raw, coldRes)
   const hotHits = collect(raw, hotRes)
