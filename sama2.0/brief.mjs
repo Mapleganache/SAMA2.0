@@ -6,10 +6,10 @@ import { callText } from './llm.mjs'
 
 const DEFAULT_EXCLUSION = '不得编造未实测数值'
 
-export async function buildBrief({ query, facts, complexity, timeoutMs, evidence }) {
+export async function buildBrief({ query, facts, complexity, timeoutMs, evidence, language = 'zh' }) {
   try {
     const response = await callText({
-      system: briefSystem(),
+      system: briefSystem(language),
       user: briefUser({ query, facts, complexity, evidence }),
       temperature: 0.1,
       timeoutMs,
@@ -22,14 +22,26 @@ export async function buildBrief({ query, facts, complexity, timeoutMs, evidence
   }
 }
 
-export function formatBriefForLane(brief) {
+export function formatBriefForLane(brief, language = 'zh') {
   if (!brief?.ok) return ''
-  const phenomena = (brief.phenomena || []).join('、') || '未列出'
+  const english = language === 'en'
+  const phenomena = (brief.phenomena || []).join(english ? ', ' : '、') || (english ? 'not listed' : '未列出')
   const hypotheses = (brief.hypotheses || [])
-    .map((item) => `- ${item.id} ${item.claim}${item.checks?.length ? `（验证：${item.checks.join('；')}）` : ''}`)
-    .join('\n') || '- （无）'
-  const mustCheck = (brief.mustCheck || []).map((item) => `- ${item}`).join('\n') || '- （无）'
+    .map((item) => `- ${item.id} ${item.claim}${item.checks?.length ? (english ? ` (checks: ${item.checks.join('; ')})` : `（验证：${item.checks.join('；')}）`) : ''}`)
+    .join('\n') || (english ? '- (none)' : '- （无）')
+  const mustCheck = (brief.mustCheck || []).map((item) => `- ${item}`).join('\n') || (english ? '- (none)' : '- （无）')
   const exclusions = (brief.exclusions || []).map((item) => `- ${item}`).join('\n') || `- ${DEFAULT_EXCLUSION}`
+  if (english) {
+    return `Preliminary analysis from the main controller (reference only, not a conclusion):
+Symptoms: ${phenomena}
+Hypotheses to verify:
+${hypotheses}
+Required checks:
+${mustCheck}
+Prohibited:
+${exclusions}
+Requirement: if you disagree with any item, write "Deviation from preliminary analysis: <item> <your evidence>" in the final plan.`
+  }
   return `主控的初步分析（仅作参考，不是结论）：
 现象：${phenomena}
 待验证假设：
@@ -108,14 +120,15 @@ function emptyBrief(facts, note = '') {
   }
 }
 
-function briefSystem() {
+function briefSystem(language = 'zh') {
+  const english = language === 'en' ? '\nWrite every field (phenomena, hypotheses, checks, mustCheck, exclusions, acceptance, note) in English. Keep JSON keys unchanged.' : ''
   return `你是磨床故障的主控分析员。你只写分析清单，不写维修步骤，不给结论，不编造数值。
 根据用户原文和已分级的近邻资料列出现象、待验证假设、必查项、禁止项和验收口径。
 假设必须能被近邻资料支撑；不要把热变形、砂轮不平衡、冷却液写成默认假设，除非资料点到它们。
 假设 2 到 4 条；必查项 2 到 5 条；允许列表为空时诚实写空。
 exclusions 必须包含「不得编造未实测数值」。
 只输出 JSON：
-{"phenomena":["发热"],"hypotheses":[{"id":"h1","claim":"一句话假设","checks":["可执行验证"]}],"mustCheck":["必查项"],"exclusions":["不得编造未实测数值"],"acceptance":["验收口径"],"confidence":0.6,"note":""}`
+{"phenomena":["发热"],"hypotheses":[{"id":"h1","claim":"一句话假设","checks":["可执行验证"]}],"mustCheck":["必查项"],"exclusions":["不得编造未实测数值"],"acceptance":["验收口径"],"confidence":0.6,"note":""}${english}`
 }
 
 function briefUser({ query, facts, complexity, evidence }) {

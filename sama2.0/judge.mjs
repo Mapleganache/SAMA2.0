@@ -208,6 +208,10 @@ ${judgement.note ? `\n${judgement.note}` : ''}`
 }
 
 function formatJudgementEn(plans, judgement, rejected = []) {
+  const cleanPlan = (text) => String(text || '')
+    .replace(/与主控分析不一致[：:]/g, 'Deviation from preliminary analysis:')
+    .replace(/^\s*(brief_deviation|thought|direction|tool|args)\s*:.*$/gmi, '')
+    .trim()
   if (!judgement?.winner) {
     const lines = rejected.map((item) => `- ${item.title}: ${(item.unsupported || []).join(', ') || 'no reviewable draft'}`)
     const failed = plans.filter((plan) => String(plan.plan || '').startsWith('方案生成失败')).map((plan) => `- ${plan.title}: generation failed`)
@@ -216,7 +220,7 @@ function formatJudgementEn(plans, judgement, rejected = []) {
   if (judgement.fallback) {
     const fallbackPlan = plans.find((plan) => plan.id === judgement.winner.id)
     const dropped = rejected.map((item) => `- ${item.title} (${item.id}): ${(item.unsupported || []).join(', ') || 'evidence check failed'}`)
-    return `${fallbackPlan?.plan || ''}
+    return `${cleanPlan(fallbackPlan?.plan)}
 
 ---
 
@@ -241,7 +245,7 @@ ${dropped.length ? `\nRejected:\n${dropped.join('\n')}\n` : ''}${judgement.note 
     const layers = choice.row.layers
       ? `\nLayers: mechanism ${choice.row.layers.mechanism}/10; measure ${choice.row.layers.measure}/10; uncertainty ${choice.row.layers.uncertainty}/10`
       : ''
-    return `### ${index === 0 ? 'Recommended' : 'Alternative'}: ${choice.row.title} (${choice.row.total} / 10)\nScores: ${scores}\nWeighted ${choice.row.total} / 10${layers}\n\n${choice.plan?.plan || ''}`
+    return `### ${index === 0 ? 'Recommended' : 'Alternative'}: ${choice.row.title} (${choice.row.total} / 10)\nScores: ${scores}\nWeighted ${choice.row.total} / 10${layers}\n\n${cleanPlan(choice.plan?.plan)}`
   }).join('\n\n---\n\n')
   return `${intro}
 
@@ -306,3 +310,4 @@ function labelUnsupported(items) {
   if (!items?.length) return '未通过出处核对'
   return items.map((item) => `含无出处 ${item}`).join('；')
 }
+

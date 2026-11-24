@@ -4,11 +4,11 @@ import { callText } from './llm.mjs'
 import { logEvent } from './log.mjs'
 import { clampScore } from './score.mjs'
 
-export async function auditWinner({ query, plan, timeoutMs, temperature = 0.1 }) {
+export async function auditWinner({ query, plan, timeoutMs, temperature = 0.1, language = 'zh' }) {
   if (!plan) return { ok: false, bestId: '', accuracy: null, credibility: null, reason: '', note: '审计未完成', ranked: [] }
   try {
     const response = await callText({
-      system: accuracySystem(),
+      system: accuracySystem(language),
       user: accuracyUser(query, plan),
       temperature,
       timeoutMs,
@@ -76,13 +76,14 @@ function auditLayers(row, plan, accuracy, credibility) {
   }
 }
 
-function accuracySystem() {
+function accuracySystem(language = 'zh') {
+  const english = language === 'en' ? '\nWrite "reason" and "note" in English; keep JSON keys unchanged.' : ''
   return `你是磨床维修准确性专评。你只审计已经选定的这一份方案，不重写方案，不另起维修步骤，也不给其他方案排名。
 accuracy 方向契合：主方向是否由本路观察里的 SUPPORT/NEAR 推出来，有没有把观察没点到的热变形、砂轮、冷却当成已经确认的主因。没有 obsId / sqlite_ id 的主因不能给高分。
 credibility 可信度：结论有多少能回溯到用户原文或方案里写明的检查依据。出现没有出处的扭矩、间隙、压力、油压、精度数值就降分。没有实测时，把结论写成待测和排查的，可信度可以高；把猜测写成定论的，可信度要低。
 准确性和可信度都用 0 到 10 的整数打分（不是 0–1 比例），10 表示最好。
 再给三层参考分：mechanism 机理是否由观察支撑，measure 具体措施，uncertainty 没依据时是否写成待验证主方向。
-只输出 JSON：{"accuracy":0,"credibility":0,"layers":{"mechanism":0,"measure":0,"uncertainty":0},"reason":"一句理由"}`
+只输出 JSON：{"accuracy":0,"credibility":0,"layers":{"mechanism":0,"measure":0,"uncertainty":0},"reason":"一句理由"}${english}`
 }
 
 function normalizeAuditScore(value) {

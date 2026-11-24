@@ -161,6 +161,7 @@ export async function sampleWave({ query, count, start, config, budget, runTool,
       complexity,
       evidence,
       timeoutMs: config.llmTimeoutMs,
+      language: config.language,
     })
     logEvent('brief', {
       ok: Boolean(usedBrief?.ok),
@@ -273,7 +274,7 @@ export async function verifyPlans({ query, plans, reportPlans, facts, config, br
   })
   const winner = judgement.winner ? survivors.find((plan) => plan.id === judgement.winner.id) : null
   const accuracy = winner
-    ? await auditWinner({ query, plan: winner, timeoutMs: config.llmTimeoutMs, temperature: config.tauJudge })
+    ? await auditWinner({ query, plan: winner, timeoutMs: config.llmTimeoutMs, temperature: config.tauJudge, language: config.language })
     : null
   if (accuracy) accuracy.bestId = winner.id
   const answer = `${formatJudgement(reportPlans || plans, judgement, rejected, config.language)}${winner ? formatAudit(accuracy, config.language) : ''}`

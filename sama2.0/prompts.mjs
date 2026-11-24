@@ -16,7 +16,7 @@ const SHARED_SYSTEM = `你是磨床维修求解者。先读本路观察里的【
 引用本地笔记时写下观察里的 knowledge/文件#起-止。引用案例时写下观察里的 chunk id。成稿主因必须带这些 id。
 机型、现象、空载或磨削、冷机或热机已经齐全时，优先直接给排查方案；细节不明就写明假设继续做，不要为了轴承型号、具体转速等再向用户追问。检索结果里若有 alarm_entry（报警号表）或 case_entry（案例），优先按条目作答并引用其 id；报警表里没有的报警号要明说查不到，不要猜。`
 
-const LANGUAGE_EN = `\nThe user interface is English. Write the entire final plan, headings, causes, steps and warnings in English. Keep citation ids, alarm codes, parameter numbers and file names unchanged. JSON keys must stay exactly as specified.`
+const LANGUAGE_EN = `\nThe user interface is English. Write the entire final plan, headings, causes, steps and warnings in English. Do not quote Chinese source text verbatim; paraphrase the evidence in English. Keep citation ids, alarm codes, parameter numbers and file names unchanged. JSON keys must stay exactly as specified.`
 
 export function buildRoles(count, { start = 0, allowWeb = false, allowAskUser = true, language = 'zh' } = {}) {
   const base = allowAskUser ? SHARED_TOOLS : SHARED_TOOLS.filter((name) => name !== 'ask_user')
