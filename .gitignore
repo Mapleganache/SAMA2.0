@@ -67,3 +67,6 @@ docs/文献-方向契合与证据选路/*.PDF
 
 # 数据库分片：代码仓库不再随 Git 分发数据库
 sama2.0/database-pack/
+
+# 数据库衍生统计（术语共现图），由本地库生成，勿入库
+sama2.0/sama-sqlite/term-graph.json
