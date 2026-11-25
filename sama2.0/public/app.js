@@ -11,7 +11,7 @@
     zh: {
       brandSub: '数控机床故障诊断', newChat: '新对话', recent: '最近问题', settings: '设置',
       title: '故障诊断', subtitle: '描述现象，SAMA 会检索资料、对照案例，给出原因与处置。',
-      detail: '详情', detailTitle: '显示/隐藏诊断详情', themeTitle: '切换主题', report: '架构报告',
+      detail: '详情', detailTitle: '显示/隐藏诊断详情', themeTitle: '切换主题',
       welcomeTitle: '从现象出发，找到可验证的原因',
       welcomeText: '不要只写“坏了”。带上机型、工况、冷热态和报警号，诊断会更准。',
       placeholder: '描述故障现象，例如：高桥外圆磨，磨削中，热机，主轴发热并振动',
@@ -39,7 +39,7 @@
     en: {
       brandSub: 'CNC machine tool diagnosis', newChat: 'New chat', recent: 'Recent', settings: 'Settings',
       title: 'Fault diagnosis', subtitle: 'Describe the symptom. SAMA searches the library and cases, then proposes causes and actions.',
-      detail: 'Details', detailTitle: 'Show/hide diagnosis details', themeTitle: 'Toggle theme', report: 'Architecture',
+      detail: 'Details', detailTitle: 'Show/hide diagnosis details', themeTitle: 'Toggle theme',
       welcomeTitle: 'Start from the symptom. Find a cause you can verify.',
       welcomeText: 'Do not just say “it is broken”. Add the model, operating condition, cold/hot state and alarm code for a sharper diagnosis.',
       placeholder: 'Describe the fault, e.g. Takasago cylindrical grinder, grinding, hot, spindle heat and vibration',
@@ -581,6 +581,7 @@
     })
     .catch(() => {});
 })();
+
 
 
 
